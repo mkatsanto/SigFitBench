@@ -1,0 +1,12 @@
+---
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - r-base>=4.0
+  - r-dplyr
+  - r-optparse
+  # SigsPack is on Bioconductor and its bioconda build is noarch, so it
+  # installs cleanly on any platform including osx-arm64.
+  - bioconductor-sigspack
+...

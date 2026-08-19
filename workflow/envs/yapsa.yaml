@@ -1,0 +1,15 @@
+---
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - r-base>=4.0
+  - r-dplyr
+  - r-optparse
+  - r-limsolve
+# Removed bioconductor-yapsa and its transitive deps (r-nmf has no
+# osx-arm64 build; other YAPSA imports like BSgenome.Hsapiens.UCSC.hg19
+# and KEGGREST are also unrelated to what this script uses). YAPSA.R calls
+# limSolve::lsei directly instead -- that's all YAPSA's own LCD() does
+# internally, so the result is numerically identical.
+...

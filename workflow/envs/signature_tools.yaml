@@ -1,0 +1,76 @@
+---
+channels:
+  - conda-forge
+  - bioconda
+channel_priority: strict
+dependencies:
+  - r-base>=4.0
+  - r-dplyr
+  - r-optparse
+  # explicit BLAS/LAPACK provider: without pinning this, conda can solve an
+  # env where R's own stats.so links against libblas.3.dylib but nothing
+  # actually ships it, breaking every R invocation at runtime (seen while
+  # a transitive post-deploy dependency install triggered loading stats)
+  - libblas
+  - liblapack
+  # signature.tools.lib itself, and its GitHub-only deps NNLM and
+  # indelsig.tools.lib, are installed by signature_tools.post-deploy.sh
+  # after this env is created (see that script for why). scripts/signature_tools.R
+  # also carries a lazy-install safety net in case that step didn't run.
+  - r-remotes
+  - r-rcpp
+  - r-rcpparmadillo
+  - r-rcppprogress
+  # compiler toolchain, needed by the post-deploy step below to build NNLM
+  # and NMF from source (neither ships an osx-arm64 conda binary)
+  - compilers
+  # signature.tools.lib Imports (from its DESCRIPTION), installed via conda
+  # so only the package itself needs to come from GitHub.
+  # NB: r-nmf is deliberately NOT listed here -- conda-forge has no
+  # osx-arm64 build for it, only osx-64/linux/win. It's compiled from CRAN
+  # source instead, in signature_tools.post-deploy.sh.
+  # NB: the BSgenome.Hsapiens.* genome data packages (hg38, hs37d5, hg19)
+  # are also deliberately NOT listed here -- conda's post-link step for
+  # these downloads the genome data with a bare curl call with no retry
+  # logic, so any network hiccup fails the whole env build. They're left
+  # for signature_tools.post-deploy.sh's remotes::install_github to pull in
+  # automatically as unmet Imports instead, via R's own (retry-friendlier)
+  # BiocManager-backed installer.
+  - bioconductor-variantannotation
+  - bioconductor-summarizedexperiment
+  - bioconductor-biocgenerics
+  - bioconductor-genomeinfodb
+  - bioconductor-genomicranges
+  - bioconductor-iranges
+  - bioconductor-bsgenome
+  - r-doparallel
+  - r-lpsolve
+  - r-cluster
+  - r-nnls
+  - r-gmp
+  - r-plyr
+  - r-rcircos
+  - r-scales
+  - r-readr
+  - r-dorng
+  - r-combinat
+  - r-limsolve
+  - r-getopt
+  - r-circlize
+  - r-foreach
+  # indelsig.tools.lib Imports (its own DESCRIPTION), pre-installed via conda
+  # for the same reason: remotes::install_github would otherwise resolve and
+  # compile these -- and their own heavy transitive CRAN dependencies (e.g.
+  # factoextra pulling in forecast/reformulas) -- from source, which is what
+  # broke the env last time (a from-source build corrupted R's BLAS linkage
+  # partway through).
+  - r-biocmanager
+  - r-ggplot2
+  - r-reshape2
+  - r-gridextra
+  - r-stringr
+  - r-factoextra
+  - r-rlang
+  - bioconductor-biostrings
+  - bioconductor-genomicfeatures
+...

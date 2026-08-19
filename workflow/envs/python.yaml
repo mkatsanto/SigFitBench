@@ -1,0 +1,19 @@
+---
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  # upper bound needed: an unpinned python>=3.8 lets conda solve python 3.12+,
+  # which removed the stdlib `distutils` module -- seaborn's rcmod.py still
+  # imports distutils.version.LooseVersion, so it fails to load entirely
+  - python>=3.8,<3.12
+  - pandas
+  - numpy
+  - scipy
+  - matplotlib-base
+  - seaborn
+  - plotly>=5.0
+  - jupyterlab
+  - ipykernel
+  - ipywidgets
+...

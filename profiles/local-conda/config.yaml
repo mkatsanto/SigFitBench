@@ -1,0 +1,11 @@
+snakefile: "../../workflow/Snakefile"
+cores: 3
+printshellcmds: true
+rerun-incomplete: true
+use-conda: true
+keep-going: true
+default-resources: mem_mb=1024
+restart-times: 1
+notemp: false
+no-hooks: true
+verbose: true

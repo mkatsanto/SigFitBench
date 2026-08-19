@@ -1,0 +1,44 @@
+---
+channels:
+  - conda-forge
+  - bioconda
+channel_priority: strict
+dependencies:
+  - r-base>=4.0
+  - r-dplyr
+  - r-optparse
+  # explicit BLAS/LAPACK provider: without pinning this, conda can solve an
+  # env where R's own stats.so links against libblas.3.dylib but nothing
+  # actually ships it, breaking every R invocation at runtime
+  - libblas
+  - liblapack
+  # sigminer itself is installed by sigminer.post-deploy.sh after this env
+  # is created (see that script for why). r-remotes/r-biocmanager are here
+  # for that step to use.
+  - r-remotes
+  - r-biocmanager
+  # compiler toolchain, needed by the post-deploy step to build NMF from
+  # source (no osx-arm64 conda binary for r-nmf), and for sigminer's own
+  # Rcpp-linked code if CRAN doesn't yet have an osx-arm64 binary for it
+  - compilers
+  # sigminer's remaining Imports (from its DESCRIPTION), installed via
+  # conda so only the package itself (and NMF) need to come from
+  # CRAN/Bioconductor directly in post-deploy.sh.
+  # NB: r-nmf is deliberately NOT listed here -- conda-forge has no
+  # osx-arm64 build for it, only osx-64/linux/win. It's compiled from CRAN
+  # source instead, in sigminer.post-deploy.sh.
+  - r-cli
+  - r-cowplot
+  - r-data.table
+  - r-furrr
+  - r-future
+  - r-ggplot2
+  - r-ggpubr
+  - bioconductor-maftools
+  - r-magrittr
+  - r-parallelly
+  - r-purrr
+  - r-rcpp
+  - r-rlang
+  - r-tidyr
+...

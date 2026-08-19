@@ -1,0 +1,170 @@
+# ============================================================================
+# SigFitTest Workflow Configuration — config_mysigmix.yaml
+# Based on config_test.yaml, with a MySigMix custom dataset using config10.tsv
+# as the signature combinations file. See README.md for full documentation.
+# ============================================================================
+
+# ============================================================================
+# CORE SETTINGS
+# ============================================================================
+
+tools_to_run: [ "SPA", "SPA_low", "MuSiCal", "FSPA"]
+
+num_muts: [200] #, 400, 800, 1600, 3200, 6400, 12800, 50000, 100000, 200000, 500000, 1000000]   # mutations per sample
+
+# Available WGS cancer types: Breast, CNS-GBM, ColoRect-AdenoCA, Eso-AdenoCA, Head-SCC,
+#   Liver-HCC, Lung-AdenoCA, Lymph-BNHL, Ovary-AdenoCA, Panc-AdenoCA, Skin-Melanoma, Stomach-AdenoCA
+cancer_types: ["Breast", "Ovary-AdenoCA", "Panc-AdenoCA", "Skin-Melanoma", "Lung-AdenoCA", "Head-SCC"]
+
+num_samples: 2
+num_realizations: 1
+
+data_types: ["custom", "synthetic"]      # "synthetic", "realsim", "external", "custom"
+relevance_modes: ["standard"]            # "standard", "relevant", or both
+
+# Unknown signatures: excluded from the fitting reference, included in simulation
+out_of_reference_sigs: ["SBS10c", "SBS10d", "SBS86", "SBS87", "SBS88", "SBS89", "SBS90", "SBS91", "SBS92", "SBS93", "SBS94", "SBS95"]
+out_of_reference_weights: [0]          # fraction of mutations from unknown sigs
+
+random_seed: 0
+
+# ============================================================================
+# DIRECTORIES
+# ============================================================================
+
+input_dir: "input"
+output_dir: "results_test"
+log_dir: "logs_test"
+signature_contributions_dir: "cosmic_tissue_data"
+
+# ============================================================================
+# COSMIC SIGNATURES
+# ============================================================================
+
+cosmic_signatures:
+  base_file: "input/COSMIC_v3.3.1_SBS_GRCh38.txt"
+
+# ============================================================================
+# SYSTEM PARAMETERS
+# ============================================================================
+
+epsilon: 0.00000001
+wgs_or_wes: "WGS"
+matrix_order: "input/mut_matrix_order_MutationalPatterns.dat"
+
+# ============================================================================
+# CUSTOM SIGNATURE MIX (data_types: ["custom"])
+# ============================================================================
+# Each dataset needs a 'combinations_file' (TSV: rows=combinations, cols=signatures);
+# each sample randomly draws one row. See README.md "Data Types" for the file format.
+
+custom_datasets:
+  MySigMix:
+    combinations_file: "input/mysigmix/config10.tsv"
+
+# ============================================================================
+# OTHER SIMULATION MODES (data_types: ["realsim"] / ["external"])
+# ============================================================================
+# realsim: real PCAWG samples for the selected cancer types, at their native mutation
+# count (no downsampling, no ground truth). Uses its own cancer_types list below.
+
+# Available cancer types in real_samples_WGS_PCAWG-146_input_profiles.dat:
+#   Biliary-AdenoCA, Bladder-TCC, Breast-AdenoCA, CNS-GBM, ColoRect-AdenoCA,
+#   Eso-AdenoCA, Head-SCC, Liver-HCC, Lung-AdenoCA, Lung-SCC, Lymph-BNHL,
+#   Panc-AdenoCA, Skin-Melanoma, Stomach-AdenoCA, Uterus-AdenoCA
+
+# data_types: ["realsim"]
+# simulation:
+#   real_samples:
+#     input_real_catalog: "real_mutational_catalogs/real_samples_WGS_PCAWG-146_input_profiles.dat"
+#     cancer_types: ["Breast-AdenoCA", "Skin-Melanoma"]
+
+# external_datasets:
+#   MyDataset:
+#     catalog: "input/my_catalog.dat"
+#     ground_truth: "input/my_weights.dat"
+#     num_muts_label: 50000
+
+# ============================================================================
+# RELEVANT SIGNATURES (Tissue-Specific Filtering)
+# ============================================================================
+# relevant_signatures: "auto" | [manual signature list] | null (skip relevant mode)
+
+relevant_signatures: null
+
+relevant_detection:
+  min_contribution: 10.0
+  min_sample_fraction: 0.3
+  min_avg_contribution: 50.0
+  consensus_tools: 2
+
+# ============================================================================
+# EVALUATION SETTINGS
+# ============================================================================
+
+evaluation:
+  min_contribution: 10.0          # min mutations per sample to count a signature "active"
+  run_bootstrap_quality: false    # computationally intensive — under development
+  num_bootstrap: 1                # 50 testing / 100 standard / 1000 publication
+
+# ============================================================================
+# TOOL OVERRIDES
+# ============================================================================
+
+tool_overrides:
+  sigminer:
+    method: "NNLS"  # options: "NNLS" (default), "QP" (quadratic programming), "SA" (simulated annealing)
+  mutationalpatterns:
+    strict: false
+  spa:
+    output_temp_dir: "temp_spa"
+  fspa:
+    output_temp_dir: "temp_fspa"
+  musical: {}
+  sigtrim:
+    zscore_threshold: 1.0
+    thresh_backward: 0.01  # L2 distance threshold for backward elimination
+    thresh_forward: 0.01   # minimum score improvement for a greedy add layer to continue
+    initial_remove_penalty: 0.05  # coarse pre-filter threshold before the add/remove loop
+    max_iter: 1000
+    prune_signatures_flag: true
+  sigid:
+    thresh_backward: 0.001
+    max_iter: 1000
+    min_penalty: 0.00001
+    max_penalty: 1000
+
+# ============================================================================
+# TOOL FORMAT CONFIGURATIONS
+# ============================================================================
+
+tool_formats:
+  tab_with_index:
+    tools: ["deconstructsigs", "spa", "spa_low", "fspa"]
+    input_data_base: "data/data_for_deconstructSigs.dat"
+    cosmic_signatures:
+      standard: "{output_dir}/cosmic_signatures/COSMIC_v3_SBS_GRCh38_tab_with_index.txt"
+
+  csv_no_index:
+    tools: ["mutationalpatterns", "musical", "sigtrim", "sigid"]
+    input_data_base: "data/data_for_MutationalPatterns.dat"
+    cosmic_signatures:
+      standard: "input/COSMIC_v3_SBS_GRCh38.txt"
+
+  csv_with_index:
+    tools: ["sigfit", "mmsig", "sigminer", "sigspack", "yapsa"]
+    input_data_base: "data/data_for_sigfit.dat"
+    cosmic_signatures:
+      standard: "{output_dir}/cosmic_signatures/COSMIC_v3_SBS_GRCh38_csv_with_index.txt"
+
+  csv_quoted:
+    tools: ["siglasso"]
+    input_data_base: "data/data_for_sigLASSO.dat"
+    cosmic_signatures:
+      standard: "{output_dir}/cosmic_signatures/COSMIC_v3_SBS_GRCh38_csv_quoted.txt"
+
+  signature_tools:
+    tools: ["signature_tools"]
+    input_data_base: "data/data_for_signature_tools.dat"
+    cosmic_signatures:
+      standard: "{output_dir}/cosmic_signatures/COSMIC_v3_SBS_GRCh38_tab_with_index.txt"

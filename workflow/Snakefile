@@ -1,0 +1,181 @@
+"""SigFitTest workflow - Signature analysis and benchmarking pipeline"""
+
+import os
+import pandas as pd
+import shutil
+from snakemake.utils import validate
+
+
+configfile: os.path.join(workflow.basedir, "..", "config", "config.yaml")
+
+# Expand {output_dir} placeholders in config
+def expand_output_dir_in_dict(d, output_dir):
+    """Recursively expand {output_dir} placeholders in dictionary values"""
+    if isinstance(d, dict):
+        return {k: expand_output_dir_in_dict(v, output_dir) for k, v in d.items()}
+    elif isinstance(d, list):
+        return [expand_output_dir_in_dict(item, output_dir) for item in d]
+    elif isinstance(d, str) and "{output_dir}" in d:
+        return d.format(output_dir=output_dir)
+    else:
+        return d
+
+if "output_dir" in config:
+    config = expand_output_dir_in_dict(config, config["output_dir"])
+
+# Include all rules from the rules directory
+include: "rules/common.smk"
+include: "rules/cosmic_signatures.smk"
+include: "rules/relevant_signatures.smk"
+include: "rules/simulation.smk"
+include: "rules/tools.smk"
+include: "rules/evaluation.smk"
+
+# Load sample table if it exists and is populated
+samples_table = pd.DataFrame()
+has_samples = False
+
+if "samples_file" in config and os.path.exists(config["samples_file"]):
+    try:
+        samples_table = pd.read_csv(
+            config["samples_file"],
+            header=0,
+            index_col=0,
+            comment="#",
+            engine="python",
+            sep="\t",
+        )
+        # Check if table has any rows (excluding header)
+        if len(samples_table) > 0:
+            has_samples = True
+            logger.info(f"Loaded samples table with {len(samples_table)} samples")
+        else:
+            logger.info("Samples table is empty - skipping sample analysis")
+    except Exception as e:
+        logger.warning(f"Could not load samples table: {e}")
+else:
+    logger.info("No samples file configured - skipping sample analysis")
+
+# Final target rule: collect all workflow outputs
+rule all:
+    """
+    Target rule that expands all wildcard combinations for complete analysis.
+    Includes tool fitting results and comprehensive evaluation metrics.
+    Wildcards are used in individual rules, expanded only here.
+    Conditionally includes sample analysis if samples.tsv is populated.
+    Conditionally includes bootstrap quality assessment if enabled in config.
+    """
+    input:
+        # Tool fitting outputs (data generation + tool execution)
+        # Exclude methods with penalty sweeps - they create penalty-specific files
+        tool_results = expand(
+            os.path.join(
+                config['output_dir'],
+                "{data_type}",
+                "{cancer_type}",
+                "{relevance}",
+                "{identifier}",
+                "rep_{rep}",
+                "{tool}_contribution.dat"
+            ),
+            data_type=active_data_types,
+            cancer_type=config.get("cancer_types", ["Head-SCC"]),
+            identifier=config["num_muts"],
+            relevance=config.get("relevance_modes", ["standard", "relevant"]),
+            tool=[t for t in get_selected_tools() if not has_penalty_sweep(t)],
+            rep=range(config.get("num_realizations", 1))
+        ),
+        # Penalty method outputs (with penalty-specific files)
+        penalty_results = [
+            os.path.join(
+                config['output_dir'],
+                data_type,
+                cancer_type,
+                relevance,
+                str(num_muts),
+                f"rep_{rep}",
+                f"{tool}_contribution_penalty_{penalty}.dat"
+            )
+            for data_type in active_data_types
+            for cancer_type in config.get("cancer_types", ["Head-SCC"])
+            for relevance in config.get("relevance_modes", ["standard", "relevant"])
+            for num_muts in config["num_muts"]
+            for rep in range(config.get("num_realizations", 1))
+            for tool in get_selected_tools()
+            if has_penalty_sweep(tool)
+            for penalty in get_penalty_values(tool)
+        ],
+        # Custom fixed-weights tool results (data_type == "custom")
+        custom_tool_results = [
+            os.path.join(
+                config['output_dir'], "custom", ds_name,
+                relevance, str(num_muts), f"rep_{rep}",
+                f"{tool}_contribution.dat"
+            )
+            for ds_name in config.get("custom_datasets", {})
+            for relevance in config.get("relevance_modes", ["standard"])
+            for num_muts in config["num_muts"]
+            for rep in range(config.get("num_realizations", 1))
+            for tool in get_selected_tools()
+            if not has_penalty_sweep(tool)
+        ] if "custom" in config.get("data_types", []) else [],
+        custom_penalty_results = [
+            os.path.join(
+                config['output_dir'], "custom", ds_name,
+                relevance, str(num_muts), f"rep_{rep}",
+                f"{tool}_contribution_penalty_{penalty}.dat"
+            )
+            for ds_name in config.get("custom_datasets", {})
+            for relevance in config.get("relevance_modes", ["standard"])
+            for num_muts in config["num_muts"]
+            for rep in range(config.get("num_realizations", 1))
+            for tool in get_selected_tools()
+            if has_penalty_sweep(tool)
+            for penalty in get_penalty_values(tool)
+        ] if "custom" in config.get("data_types", []) else [],
+        # External catalog tool results (data_type == "external", rep always 0)
+        external_tool_results = [
+            os.path.join(
+                config['output_dir'], "external", ds_name,
+                relevance, str(ds["num_muts_label"]), "rep_0",
+                f"{tool}_contribution.dat"
+            )
+            for ds_name, ds in config.get("external_datasets", {}).items()
+            for relevance in config.get("relevance_modes", ["standard"])
+            for tool in get_selected_tools()
+            if not has_penalty_sweep(tool)
+        ] if "external" in config.get("data_types", []) else [],
+        external_penalty_results = [
+            os.path.join(
+                config['output_dir'], "external", ds_name,
+                relevance, str(ds["num_muts_label"]), "rep_0",
+                f"{tool}_contribution_penalty_{penalty}.dat"
+            )
+            for ds_name, ds in config.get("external_datasets", {}).items()
+            for relevance in config.get("relevance_modes", ["standard"])
+            for tool in get_selected_tools()
+            if has_penalty_sweep(tool)
+            for penalty in get_penalty_values(tool)
+        ] if "external" in config.get("data_types", []) else [],
+        # Real-sample tool results (data_type == "realsim", rep always 0, no ground truth
+        # so no true_weights available — SigID's auto-penalty search needs that input and is skipped)
+        realsim_tool_results = [
+            os.path.join(
+                config['output_dir'], "realsim", cancer_type,
+                relevance, "none", "rep_0",
+                f"{tool}_contribution.dat"
+            )
+            for cancer_type in get_realsim_cancer_types()
+            for relevance in config.get("relevance_modes", ["standard"])
+            for tool in get_selected_tools()
+            if not has_penalty_sweep(tool)
+            and tool not in ("SigID",)
+        ] if "realsim" in config.get("data_types", []) else [],
+        # Single aggregated metrics file for all tools and conditions
+        all_metrics = os.path.join(config['output_dir'], "all_evaluation_metrics.tsv"),
+        # Per-sample metrics file with features (ENP, condition number, KL divergence, etc.)
+        per_sample_metrics = os.path.join(config['output_dir'], "all_per_sample_metrics.tsv"),
+        # Bootstrap quality assessment (optional)
+        bootstrap_quality = os.path.join(config['output_dir'], "all_bootstrap_quality.tsv") if config.get("evaluation", {}).get("run_bootstrap_quality", False) else [],
+        # HTML report (MultiQC-style) - contains all visualizations
+        html_report=os.path.join(config['output_dir'], "sigfittest_report.html")

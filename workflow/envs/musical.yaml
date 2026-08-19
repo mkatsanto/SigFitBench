@@ -1,0 +1,15 @@
+---
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - python=3.11
+  - numpy
+  - pandas
+  - scipy
+  - matplotlib
+  - seaborn
+  - scikit-learn<1.5
+  - pip
+  - pip:
+    - git+https://github.com/parklab/musical.git@main

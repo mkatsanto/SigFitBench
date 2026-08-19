@@ -1,0 +1,20 @@
+name: sigfittest
+channels:
+  - conda-forge
+  - bioconda
+  - defaults
+dependencies:
+  # Workflow management
+  - snakemake>=8.20,<9
+  - snakemake-executor-plugin-slurm>=0.11
+  - graphviz  # For workflow visualization
+  
+  # Python core (for workflow scripts and evaluation)
+  - python>=3.9
+  - pandas
+  - numpy
+  - scipy
+  
+  # Visualization (for result analysis)
+  - matplotlib
+  - seaborn

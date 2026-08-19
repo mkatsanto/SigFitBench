@@ -1,0 +1,138 @@
+# ============================================================================
+# SigFitTest Workflow Configuration — config_unknown_0.yaml
+# Benchmark run: all 16 tools, 3 tissues, 0% of mutations from unknown
+# (out-of-reference) signatures. See README.md for full documentation.
+# ============================================================================
+
+# ============================================================================
+# CORE SETTINGS
+# ============================================================================
+
+tools_to_run: [
+  "MutationalPatterns", "signature_tools", "MuSiCal", "SPA", "SigID", "SigTrim"]
+#"deconstructSigs", "mmsig", "sigfit", "siglasso","FSPA",
+#  "sigminer", "signature_tools", "sigspack", "yapsa",
+
+num_muts: [250, 500, 1000, 2000, 5000, 10000, 50000, 100000]   # mutations per sample
+
+# Available WGS cancer types: Breast, CNS-GBM, ColoRect-AdenoCA, Eso-AdenoCA, Head-SCC,
+#   Liver-HCC, Lung-AdenoCA, Lymph-BNHL, Ovary-AdenoCA, Panc-AdenoCA, Skin-Melanoma, Stomach-AdenoCA
+cancer_types: ["Breast", "Ovary-AdenoCA", "Lung-AdenoCA", "ColoRect-AdenoCA", "Head-SCC", "Skin-Melanoma"]
+
+num_samples: 100
+num_realizations: 1
+
+data_types: ["synthetic"]                # "synthetic", "realsim", "external", "custom"
+relevance_modes: ["standard"]            # "standard", "relevant", or both
+
+# Unknown signatures: excluded from the fitting reference, included in simulation
+out_of_reference_sigs: ["SBS10c", "SBS10d", "SBS86", "SBS87", "SBS88", "SBS89", "SBS90", "SBS91", "SBS92", "SBS93", "SBS94", "SBS95"]
+out_of_reference_weights: [0.0]          # fraction of mutations from unknown sigs
+
+random_seed: 0
+
+# ============================================================================
+# DIRECTORIES
+# ============================================================================
+
+input_dir: "input"
+output_dir: "results_unknown_0"
+log_dir: "logs_unknown_0"
+signature_contributions_dir: "cosmic_tissue_data"
+
+# ============================================================================
+# COSMIC SIGNATURES
+# ============================================================================
+
+cosmic_signatures:
+  base_file: "input/COSMIC_v3.3.1_SBS_GRCh38.txt"
+
+# ============================================================================
+# SYSTEM PARAMETERS
+# ============================================================================
+
+epsilon: 0.00000001
+wgs_or_wes: "WGS"
+matrix_order: "input/mut_matrix_order_MutationalPatterns.dat"
+
+# ============================================================================
+# RELEVANT SIGNATURES (Tissue-Specific Filtering)
+# ============================================================================
+# relevant_signatures: "auto" | [manual signature list] | null (skip relevant mode)
+
+relevant_signatures: null
+
+relevant_detection:
+  min_contribution: 10.0
+  min_sample_fraction: 0.3
+  min_avg_contribution: 50.0
+  consensus_tools: 2
+
+# ============================================================================
+# EVALUATION SETTINGS
+# ============================================================================
+
+evaluation:
+  min_contribution: 10.0          # min mutations per sample to count a signature "active"
+  run_bootstrap_quality: false    # computationally intensive — under development
+  num_bootstrap: 1                # 50 testing / 100 standard / 1000 publication
+
+# ============================================================================
+# TOOL OVERRIDES
+# ============================================================================
+
+tool_overrides:
+  sigminer:
+    method: "NNLS"  # options: "NNLS" (default), "QP" (quadratic programming), "SA" (simulated annealing)
+  mutationalpatterns:
+    strict: true
+  spa:
+    output_temp_dir: "temp_spa"
+  musical: {}
+  sigtrim:
+    zscore_threshold: 1.0
+    thresh_backward: 0.01  # L2 distance threshold for backward elimination
+    thresh_forward: 0.01   # minimum score improvement for a greedy add layer to continue
+    initial_remove_penalty: 0.05  # coarse pre-filter threshold before the add/remove loop
+    max_iter: 1000
+    prune_signatures_flag: true
+  sigid:
+    thresh_backward: 0.001
+    max_iter: 1000
+    min_penalty: 0.00001
+    max_penalty: 1000
+
+# ============================================================================
+# TOOL FORMAT CONFIGURATIONS
+# ============================================================================
+
+tool_formats:
+  tab_with_index:
+    tools: ["deconstructSigs", "spa", "spa_low", "FSPA"]
+    input_data_base: "data/data_for_deconstructSigs.dat"
+    cosmic_signatures:
+      standard: "{output_dir}/cosmic_signatures/COSMIC_v3_SBS_GRCh38_tab_with_index.txt"
+
+  csv_no_index:
+    tools: ["MutationalPatterns", "musical", "sigtrim", "sigid"]
+    input_data_base: "data/data_for_MutationalPatterns.dat"
+    cosmic_signatures:
+      standard: "input/COSMIC_v3_SBS_GRCh38.txt"
+
+  csv_with_index:
+    tools: ["sigfit", "mmsig", "sigminer", "sigspack", "yapsa"]
+    input_data_base: "data/data_for_sigfit.dat"
+    cosmic_signatures:
+      standard: "{output_dir}/cosmic_signatures/COSMIC_v3_SBS_GRCh38_csv_with_index.txt"
+
+  csv_quoted:
+    tools: ["siglasso"]
+    input_data_base: "data/data_for_sigLASSO.dat"
+    cosmic_signatures:
+      standard: "{output_dir}/cosmic_signatures/COSMIC_v3_SBS_GRCh38_csv_quoted.txt"
+
+  signature_tools:
+    tools: ["signature_tools"]
+    input_data_base: "data/data_for_signature_tools.dat"
+    cosmic_signatures:
+      standard: "{output_dir}/cosmic_signatures/COSMIC_v3_SBS_GRCh38_tab_with_index.txt"

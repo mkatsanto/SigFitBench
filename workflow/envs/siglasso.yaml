@@ -1,0 +1,19 @@
+---
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - r-base>=4.0
+  - r-dplyr
+  - r-optparse
+  # siglasso itself is installed by siglasso.post-deploy.sh after this env
+  # is created: it's GitHub-only (gersteinlab/siglasso), not on
+  # CRAN/Bioconductor/conda at all.
+  - r-remotes
+  # siglasso's own Depends (from its DESCRIPTION), installed via conda so
+  # only the package itself needs to come from GitHub.
+  - r-nnls
+  - r-glmnet
+  - r-rcolorbrewer
+  - r-colorramps
+...

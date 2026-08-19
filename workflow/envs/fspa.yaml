@@ -1,0 +1,15 @@
+---
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - python>=3.8
+  - pandas<3
+  - numpy
+  - pip
+  - pip:
+    - git+ssh://git@github.com/sirenfrappe/FSPA.git@FSPA
+...
+
+
+
