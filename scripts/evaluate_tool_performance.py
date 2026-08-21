@@ -153,7 +153,7 @@ def load_tool_results(results_file: str) -> pd.DataFrame:
         elif df.columns[0] == '0' or df.iloc[0, 0] in ['SBS1', 'SBS2', 'SBS3']:  # First column looks like signatures
             df = df.set_index(df.columns[0], drop=True)
         return df
-    except:
+    except Exception:
         # Try tab-separated
         try:
             df = pd.read_csv(results_file, sep='\t', index_col=0)
@@ -185,7 +185,7 @@ def load_reference_signatures(ref_file: str) -> List[str]:
         # Try TSV first (COSMIC format)
         df = pd.read_csv(ref_file, sep='\t', index_col='Type')
         return df.columns.tolist()
-    except:
+    except Exception:
         try:
             # Try CSV
             df = pd.read_csv(ref_file, sep=',')

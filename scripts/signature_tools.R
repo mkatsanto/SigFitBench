@@ -6,7 +6,8 @@ option_list <- list(
   make_option("--output", type = "character"),
   make_option("--method", type = "character", default = "KLD"),
   make_option("--filter-type", type = "character", default = "giniScaledThreshold", dest = "filter_type"),
-  make_option("--nboot", type = "integer", default = 100)
+  make_option("--nboot", type = "integer", default = 100),
+  make_option("--nparallel", type = "integer", default = 1)
 )
 opt <- parse_args(OptionParser(option_list = option_list))
 
@@ -62,7 +63,7 @@ cosmic3 <- as.matrix(read.table(opt$cosmic, sep = "\t", header = TRUE, row.names
 res <- Fit(catalogues = mut_mat, signatures = cosmic3,
            method = opt$method,
            exposureFilterType = opt$filter_type,
-           useBootstrap = TRUE, nboot = opt$nboot, nparallel = 1)
+           useBootstrap = TRUE, nboot = opt$nboot, nparallel = opt$nparallel)
 res_to_save <- t(res$exposures)
 res_to_save <- res_to_save[!(row.names(res_to_save) == "unassigned"), ]
 res_to_save <- as.data.frame(res_to_save) %>% mutate_if(is.numeric, round, digits = 4)

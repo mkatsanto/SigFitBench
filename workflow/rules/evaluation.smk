@@ -309,9 +309,9 @@ rule create_html_report:
         per_sample_metrics=os.path.join(config['output_dir'], "all_per_sample_metrics.tsv"),
         config_file=workflow.configfiles[0] if workflow.configfiles else []
     output:
-        report=os.path.join(config['output_dir'], "sigfittest_report.html")
+        report=os.path.join(config['output_dir'], "sigfitbench_report.html")
     params:
-        title="SigFitTest Analysis Report",
+        title="SigFitBench Analysis Report",
         subtitle="Mutational Signature Fitting Tool Comparison and Evaluation",
         results_dir=config['output_dir']
     log:

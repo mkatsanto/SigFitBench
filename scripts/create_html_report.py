@@ -12,6 +12,7 @@ Author: SigFitTest Workflow
 """
 
 import argparse
+import json
 import os
 import re
 from pathlib import Path
@@ -32,31 +33,29 @@ class ReportMetadata:
     """Centralize all tool colors, symbols, column mappings, and display order."""
     
     def __init__(self):
-        # Tool colors — same-family methods share similar hues, families are
-        # maximally distinct from each other.
+        # Tool colors — SigTrim (navy) and SigID (red) are our own tools and are
+        # kept bold/saturated so they stand out; every other (external) tool gets
+        # a pale, muted tone so the plots read as "ours vs. the field" at a glance.
         self.tool_colors = {
-            # MuSiCal family — blues (dark → light)
-            'MuSiCal':                 '#0C5DA5',
-            'MuSiCal-FN':              '#4898CC',
-            'MuSiCal-BI':              '#87C0E0',
-            # SPA family — amber/orange (distinct warm tone)
-            'SPA':                     '#E69F00',
-            'SPA_low':                 '#B36B00',
-            'FSPA':                    '#FFCC66',
-            # SigID — teal (auto-penalty unknown-signature discovery)
-            'SigID':                   '#007A73',
-            # SigTrim — red (unassigned-mutation trimming)
-            'SigTrim':                 '#CC3311',
-            # external tools — purples/neutrals/pinks, kept distinct from above
-            'deconstructSigs':         '#8B4FCF',
-            'MutationalPatterns':      '#5E5E5E',
-            'sigfit':                  '#B8860B',
-            'yapsa':                   '#6A5ACD',
-            'sigspack':                '#A0522D',
-            'signature_tools':         '#9932CC',
-            'siglasso':                '#556B2F',
-            'mmsig':                   '#C2185B',
-            'sigminer':                '#455A64',
+            # our tools — bold, high-contrast
+            'SigTrim':                 '#1B3F8B',  # navy blue
+            'SigID':                   '#E31A1C',  # red
+            # everything else — pale/muted, still mutually distinguishable
+            'MuSiCal':                 '#9DC3E6',  # pale blue
+            'MuSiCal-FN':              '#B8D4E8',  # paler blue
+            'MuSiCal-BI':              '#D2E4F0',  # palest blue
+            'SPA':                     '#A9D18E',  # pale green
+            'SPA_low':                 '#C2DDA6',  # pale olive-green
+            'FSPA':                    '#DAEACB',  # palest green
+            'deconstructSigs':         '#C9B8E0',  # pale purple
+            'MutationalPatterns':      '#E8B7D4',  # pale pink
+            'sigfit':                  '#E6D28A',  # pale gold
+            'yapsa':                   '#B7B8E0',  # pale periwinkle
+            'sigspack':                '#D9BFA0',  # pale tan
+            'signature_tools':         '#F0C089',  # pale orange
+            'siglasso':                '#C7D2A0',  # pale sage
+            'mmsig':                   '#E8AFC0',  # pale rose
+            'sigminer':                '#B9C4CC',  # pale slate
         }
 
         # Base method extraction (for grouping tools by approach)
@@ -205,144 +204,301 @@ def get_html_template():
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{title}</title>
     <style>
+        :root {{
+            --bg: #f6f7fb;
+            --surface: #ffffff;
+            --border: #e5e7eb;
+            --border-soft: #eef0f4;
+            --text: #1f2430;
+            --text-muted: #667085;
+            --text-faint: #9aa1b1;
+            --primary: #4338ca;
+            --primary-dark: #33279c;
+            --primary-light: #eef1fd;
+            --primary-lighter: #f5f6fe;
+            --radius: 10px;
+            --shadow-sm: 0 1px 2px rgba(16, 24, 40, 0.05);
+            --shadow-md: 0 4px 14px rgba(16, 24, 40, 0.06);
+        }}
+
         /* Base Styles */
         * {{
             margin: 0;
             padding: 0;
             box-sizing: border-box;
         }}
-        
-        body {{
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
-            line-height: 1.6;
-            color: #333;
-            background: #f5f7fa;
+
+        html {{
+            scroll-behavior: smooth;
         }}
-        
+
+        body {{
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            font-size: 15px;
+            line-height: 1.65;
+            color: var(--text);
+            background: var(--bg);
+            -webkit-font-smoothing: antialiased;
+        }}
+
+        h1, h2, h3, h4, h5 {{
+            line-height: 1.3;
+            font-weight: 650;
+            letter-spacing: -0.01em;
+        }}
+
+        a {{ color: var(--primary); }}
+
         /* Header */
         .header {{
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: linear-gradient(120deg, #3730a3 0%, #4f46e5 55%, #4338ca 100%);
             color: white;
-            padding: 2rem;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            padding: 2.75rem 2.5rem 2.25rem;
+            box-shadow: var(--shadow-md);
         }}
-        
+
+        .header-inner {{
+            max-width: 1400px;
+            margin: 0 auto;
+        }}
+
+        .header-kicker {{
+            display: inline-block;
+            font-size: 0.72rem;
+            font-weight: 700;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+            color: rgba(255,255,255,0.75);
+            background: rgba(255,255,255,0.12);
+            padding: 0.25rem 0.65rem;
+            border-radius: 999px;
+            margin-bottom: 0.9rem;
+        }}
+
         .header h1 {{
-            font-size: 2.5rem;
-            margin-bottom: 0.5rem;
+            font-size: 2.1rem;
+            font-weight: 700;
+            margin-bottom: 0.4rem;
         }}
-        
+
+        .header p {{
+            color: rgba(255,255,255,0.85);
+            font-size: 1rem;
+            font-weight: 400;
+            max-width: 60ch;
+        }}
+
         /* Navigation */
         .nav {{
-            background: white;
-            padding: 1rem 2rem;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+            background: rgba(255,255,255,0.92);
+            backdrop-filter: saturate(180%) blur(8px);
+            border-bottom: 1px solid var(--border);
+            padding: 0.7rem 2.5rem;
             position: sticky;
             top: 0;
             z-index: 100;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
         }}
-        
-        .nav a {{
-            color: #667eea;
+
+        .nav-brand {{
+            font-weight: 700;
+            font-size: 0.85rem;
+            color: var(--text);
+            letter-spacing: -0.01em;
+        }}
+
+        .nav-links a {{
+            color: var(--text-muted);
             text-decoration: none;
-            margin-right: 2rem;
-            font-weight: 500;
-            transition: all 0.3s;
+            margin-left: 1.75rem;
+            font-weight: 600;
+            font-size: 0.88rem;
+            padding-bottom: 0.2rem;
+            border-bottom: 2px solid transparent;
+            transition: color 0.2s, border-color 0.2s;
         }}
-        
-        .nav a:hover {{
-            color: #764ba2;
+
+        .nav-links a:hover {{
+            color: var(--primary);
+            border-bottom-color: var(--primary-light);
         }}
-        
+
         /* Main Container */
         .container {{
-            max-width: 100%;
-            margin: 2rem auto;
-            padding: 0 2rem;
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 2rem 2.5rem 3rem;
         }}
-        
+
+        /* Intro: quick-stats strip + orientation guide */
+        .intro {{
+            margin-bottom: 1.75rem;
+        }}
+
+        .stat-strip {{
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.75rem;
+            margin-bottom: 1.25rem;
+        }}
+
+        .stat-badge {{
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 0.7rem 1.1rem;
+            box-shadow: var(--shadow-sm);
+            display: flex;
+            flex-direction: column;
+            gap: 0.15rem;
+            min-width: 128px;
+        }}
+
+        .stat-badge-value {{
+            font-size: 1.25rem;
+            font-weight: 700;
+            color: var(--primary);
+            letter-spacing: -0.01em;
+        }}
+
+        .stat-badge-label {{
+            font-size: 0.72rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: var(--text-faint);
+        }}
+
+        .intro-guide {{
+            background: var(--primary-lighter);
+            border: 1px solid var(--primary-light);
+            border-radius: var(--radius);
+            padding: 1.1rem 1.4rem;
+            font-size: 0.92rem;
+            color: var(--text);
+        }}
+
+        .intro-guide p {{
+            margin-bottom: 0.6rem;
+        }}
+
+        .intro-guide ul {{
+            margin: 0;
+            padding-left: 1.2rem;
+            display: grid;
+            gap: 0.35rem;
+        }}
+
+        .intro-guide li {{ color: var(--text); }}
+        .intro-guide a {{ font-weight: 600; text-decoration: none; }}
+        .intro-guide a:hover {{ text-decoration: underline; }}
+
         /* Sections */
         .section {{
-            background: white;
-            padding: 2rem;
-            margin-bottom: 2rem;
-            border-radius: 8px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-        }}
-        
-        .section h2 {{
-            color: #667eea;
+            background: var(--surface);
+            padding: 1.85rem 2rem;
             margin-bottom: 1.5rem;
-            padding-bottom: 0.5rem;
-            border-bottom: 2px solid #667eea;
+            border-radius: var(--radius);
+            border: 1px solid var(--border);
+            box-shadow: var(--shadow-sm);
+            scroll-margin-top: 4.5rem;
         }}
-        
+
+        .section h2 {{
+            font-size: 1.35rem;
+            color: var(--text);
+            margin-bottom: 1.25rem;
+            padding-bottom: 0.6rem;
+            border-bottom: 1px solid var(--border-soft);
+        }}
+
+        .section h3 {{
+            font-size: 1.05rem;
+            color: var(--text);
+            margin: 1.5rem 0 0.75rem;
+        }}
+
+        .section h3:first-child {{ margin-top: 0; }}
+
         /* Tables */
         table {{
             width: 100%;
             border-collapse: collapse;
             margin: 1rem 0;
+            font-size: 0.9rem;
         }}
-        
+
         th {{
-            background: #667eea;
-            color: white;
-            padding: 0.75rem;
+            background: var(--primary-light);
+            color: var(--primary-dark);
+            padding: 0.65rem 0.85rem;
             text-align: left;
-            font-weight: 600;
+            font-weight: 700;
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            letter-spacing: 0.02em;
+            border-bottom: 1px solid var(--border);
         }}
-        
+
         td {{
-            padding: 0.75rem;
-            border-bottom: 1px solid #e0e0e0;
+            padding: 0.65rem 0.85rem;
+            border-bottom: 1px solid var(--border-soft);
         }}
-        
-        tr:hover {{
-            background: #f9f9f9;
+
+        tr:hover td {{
+            background: var(--primary-lighter);
         }}
-        
+
         /* Tabs */
         .tabs {{
             display: flex;
-            border-bottom: 2px solid #e0e0e0;
+            flex-wrap: wrap;
+            gap: 0.25rem;
+            border-bottom: 1px solid var(--border);
             margin-bottom: 1.5rem;
         }}
-        
+
         .tab {{
-            padding: 0.75rem 1.5rem;
+            padding: 0.65rem 1.25rem;
             cursor: pointer;
             border: none;
             background: none;
-            font-size: 1rem;
-            color: #666;
-            transition: all 0.3s;
-        }}
-        
-        .tab:hover {{
-            background: #f0f0f0;
-        }}
-        
-        .tab.active {{
-            color: #667eea;
-            border-bottom: 3px solid #667eea;
+            font-size: 0.92rem;
             font-weight: 600;
+            color: var(--text-muted);
+            border-bottom: 2.5px solid transparent;
+            border-radius: 6px 6px 0 0;
+            transition: color 0.15s, background 0.15s, border-color 0.15s;
         }}
-        
+
+        .tab:hover {{
+            background: var(--primary-lighter);
+            color: var(--primary);
+        }}
+
+        .tab.active {{
+            color: var(--primary);
+            border-bottom-color: var(--primary);
+            background: var(--primary-lighter);
+        }}
+
         .tab-content {{
             display: none;
         }}
-        
+
         .tab-content.active {{
             display: block;
         }}
-        
+
         /* Plots */
         .plot-container {{
             margin: 2rem 0;
             width: 100%;
             overflow-x: visible;
         }}
-        
+
         /* Force Plotly divs to fill container */
         .plot-container > div,
         .plot-box > div,
@@ -370,53 +526,86 @@ def get_html_template():
             max-height: 600px;
             overflow-y: auto;
             overflow-x: hidden;
-            background: #fbfbfb;
-            border: 1px solid #ebebeb;
+            background: var(--bg);
+            border: 1px solid var(--border);
             padding: 0.75rem;
-            border-radius: 6px;
-            box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+            border-radius: 8px;
             font-size: 13px;
         }}
 
-        .plot-controls .controls-header {{ 
-            margin-bottom: 0.5rem; 
+        .plot-controls .controls-header {{
+            margin-bottom: 0.5rem;
             position: sticky;
             top: 0;
-            background: #fbfbfb;
+            background: var(--bg);
             padding-bottom: 0.25rem;
-            border-bottom: 1px solid #e0e0e0;
+            border-bottom: 1px solid var(--border);
         }}
-        
-        .plot-controls .controls-section {{ 
-            margin-bottom: 0.75rem; 
+
+        .plot-controls .controls-section {{
+            margin-bottom: 0.75rem;
         }}
-        
+
         .plot-controls label {{
             display: block;
             margin: 0.25rem 0;
             cursor: pointer;
-        }}
-        
-        .plot-controls label:hover {{
-            background: #f0f0f0;
-            padding-left: 2px;
-        }}
-        
-        /* Info Box */
-        .info-box {{
-            background: #e3f2fd;
-            border-left: 4px solid #2196f3;
-            padding: 1rem;
-            margin: 1rem 0;
             border-radius: 4px;
         }}
-        
+
+        .plot-controls label:hover {{
+            background: var(--primary-light);
+            padding-left: 2px;
+        }}
+
+        /* Info Box */
+        .info-box {{
+            background: var(--primary-lighter);
+            border-left: 3px solid var(--primary);
+            padding: 1.1rem 1.3rem;
+            margin: 1rem 0;
+            border-radius: 0 8px 8px 0;
+        }}
+
+        /* Collapsible details panels (Benchmark Overview, Metric Reference, etc.) */
+        details {{
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 0 1rem;
+            margin: 0.9rem 0;
+            background: var(--surface);
+            transition: background 0.15s;
+        }}
+
+        details[open] {{
+            background: var(--surface);
+        }}
+
+        details summary {{
+            list-style: none;
+        }}
+
+        details summary::-webkit-details-marker {{
+            display: none;
+        }}
+
+        details summary:hover {{
+            color: var(--primary) !important;
+        }}
+
+        details table, details > div {{
+            margin-left: 0;
+            margin-right: 0;
+        }}
+
         /* Footer */
         .footer {{
             text-align: center;
-            padding: 2rem;
-            color: #666;
-            font-size: 0.9rem;
+            padding: 2.5rem 1rem;
+            color: var(--text-faint);
+            font-size: 0.85rem;
+            border-top: 1px solid var(--border);
+            margin-top: 1rem;
         }}
     </style>
     <script>
@@ -425,18 +614,18 @@ def get_html_template():
             document.querySelectorAll('.tab-content').forEach(content => {{
                 content.classList.remove('active');
             }});
-            
+
             // Remove active from all tabs
             document.querySelectorAll('.tab').forEach(tab => {{
                 tab.classList.remove('active');
             }});
-            
+
             // Show selected tab content
             document.getElementById(tabName).classList.add('active');
             if (event && event.target) {{
                 event.target.classList.add('active');
             }}
-            
+
             // Force resize all Plotly plots in the newly visible tab
             setTimeout(function() {{
                 var activeTab = document.getElementById(tabName);
@@ -448,7 +637,7 @@ def get_html_template():
                 }}
             }}, 50);
         }}
-        
+
         // Auto-resize all plots when page loads and when window resizes
         window.addEventListener('load', function() {{
             setTimeout(function() {{
@@ -458,7 +647,7 @@ def get_html_template():
                 }});
             }}, 200);
         }});
-        
+
         window.addEventListener('resize', function() {{
             var allPlots = document.querySelectorAll('.js-plotly-plot');
             allPlots.forEach(function(plot) {{
@@ -469,22 +658,27 @@ def get_html_template():
 </head>
 <body>
     <div class="header">
-        <h1>{title}</h1>
-        <p>{subtitle}</p>
+        <div class="header-inner">
+            <span class="header-kicker">Benchmark Report</span>
+            <h1>{title}</h1>
+            <p>{subtitle}</p>
+        </div>
     </div>
-    
+
     <div class="nav">
-        <a href="#summary">Summary</a>
-        <a href="#experiment">Experiment Details</a>
-        <a href="#visualizations">Visualizations</a>
+        <span class="nav-brand">SigFitBench</span>
+        <span class="nav-links">
+            <a href="#visualizations">Results</a>
+            <a href="#appendix">Appendix</a>
+        </span>
     </div>
-    
+
     <div class="container">
         {content}
     </div>
-    
+
     <div class="footer">
-        Generated by SigFitTest Workflow | {timestamp}
+        Generated by SigFitBench | {timestamp}
     </div>
 </body>
 </html>
@@ -686,34 +880,114 @@ def load_per_sample_data(tsv_files):
 # HTML Section Generators
 # ============================================================================
 
-def create_summary_section(df, df_raw=None, unknown_sig_config=None):
-    """Create summary statistics section with experimental parameters.
-    
+def create_report_intro(df, unknown_sig_config=None):
+    """Compact orientation block shown right under the header, before the results tabs:
+    a row of quick-stat badges plus a short guide to what's in the report and where to
+    find it. Keeps readers from having to scroll past a page of background/methodology
+    text (that content still exists — see create_appendix_section — just moved to the
+    end of the report as reference material).
+
+    Args:
+        df: DataFrame with evaluation metrics
+        unknown_sig_config: Optional dict with unknown signature configuration
+                          {'num_unknowns': int, 'weights': list}
+    """
+    n_tools = df['tool'].nunique()
+    cancer_types_list = sorted(df['cancer_type'].unique())
+    n_cancer_types = len(cancer_types_list)
+    num_samples = int(df['num_samples'].iloc[0]) if 'num_samples' in df.columns else None
+
+    mutation_counts = sorted(df['num_muts'].unique())
+    if mutation_counts:
+        burden_range = f"{int(mutation_counts[0]):,} – {int(mutation_counts[-1]):,}"
+    else:
+        burden_range = 'N/A'
+
+    badges = [
+        ('Tools Compared', str(n_tools)),
+        ('Cancer Types', str(n_cancer_types)),
+        ('Mutation Burdens', burden_range),
+        ('Samples / Condition', str(num_samples) if num_samples is not None else 'N/A'),
+    ]
+
+    if unknown_sig_config and unknown_sig_config.get('num_unknowns', 0) > 0:
+        weights = unknown_sig_config.get('weights', [])
+        weight_label = ', '.join(f"{w*100:.0f}%" for w in weights) if weights else \
+            f"{unknown_sig_config['num_unknowns']} sig(s)"
+        badges.append(('Unknown Sig. Weight', weight_label))
+
+    badges_html = ''.join(
+        f'<div class="stat-badge"><span class="stat-badge-value">{value}</span>'
+        f'<span class="stat-badge-label">{label}</span></div>'
+        for label, value in badges
+    )
+
+    cancer_types_str = ', '.join(cancer_types_list)
+    plural = 's' if n_cancer_types != 1 else ''
+
+    html = f'''
+    <div class="intro">
+        <div class="stat-strip">{badges_html}</div>
+        <div class="intro-guide">
+            <p>
+                This report compares <strong>{n_tools} signature-fitting tools</strong> on synthetic tumour samples with a
+                <strong>known ground truth</strong>, across <strong>{n_cancer_types} cancer type{plural}</strong>
+                ({cancer_types_str}) and mutation burdens from {burden_range}.
+            </p>
+            <ul>
+                <li>Each tab below is one cancer type's results: precision/recall, error metrics, tool agreement, and per-sample signature activity.</li>
+                <li>The <strong>Aggregate Analysis</strong> tab pools results across all cancer types.</li>
+                <li>Full background, parameter tables, and metric definitions are in the <a href="#appendix">Appendix</a> at the end of this report.</li>
+            </ul>
+        </div>
+    </div>
+    '''
+    return html
+
+
+def _derive_cosmic_label(base_file):
+    """Build a human-readable COSMIC catalog label from the configured base_file path.
+
+    e.g. "input/COSMIC_v3.3.1_SBS_GRCh38.txt" -> "COSMIC v3.3.1 SBS signatures
+    (single base substitutions, GRCh38)". Falls back to a generic label if the
+    filename doesn't match the expected COSMIC naming convention.
+    """
+    if base_file:
+        m = re.match(r"COSMIC_(v[\d.]+)_SBS_(GRCh\d+)", os.path.basename(base_file))
+        if m:
+            version, genome = m.groups()
+            return f"COSMIC {version} SBS signatures (single base substitutions, {genome})"
+    return "COSMIC SBS signatures"
+
+
+def create_appendix_section(df, df_raw=None, unknown_sig_config=None, cosmic_version_label=None):
+    """Background, full parameter tables, metric reference, and experimental setup —
+    reference material shown at the end of the report (see create_report_intro for the
+    compact quick-orientation version shown at the top instead).
+
     Args:
         df: DataFrame with evaluation metrics
         df_raw: Optional raw per-realization data
         unknown_sig_config: Optional dict with unknown signature configuration
                           {'num_unknowns': int, 'weights': list}
+        cosmic_version_label: Optional human-readable COSMIC catalog label derived
+                          from config's cosmic_signatures.base_file
     """
     n_tools = df['tool'].nunique()
     n_cancer_types = df['cancer_type'].nunique()
     n_conditions = len(df)
     num_samples = int(df['num_samples'].iloc[0]) if 'num_samples' in df.columns else 'N/A'
-    
-    # Get number of realizations
+
     num_realizations = 'N/A'
     if df_raw is not None and 'realization' in df_raw.columns:
         num_realizations = int(df_raw['realization'].nunique())
-    
-    # Get unique tools in custom order
+
+    # Get unique tools in custom order, with display-friendly capitalization
     tool_order = get_tool_display_order()
     available_tools = set(df['tool'].unique())
     tools_list = [t for t in tool_order if t in available_tools]
-    # Add any tools not in our predefined order
     remaining_tools = sorted(available_tools - set(tools_list))
     tools_list.extend(remaining_tools)
-    
-    # Capitalize tool names for display: musical -> MuSiCal, spa -> SPA, etc.
     tool_display_names = []
     for tool in tools_list:
         if tool.lower() == 'musical':
@@ -722,35 +996,47 @@ def create_summary_section(df, df_raw=None, unknown_sig_config=None):
             tool_display_names.append(tool.upper())
         else:
             tool_display_names.append(tool)
-    tools = ', '.join(tool_display_names)
-    
-    cancer_types = ', '.join(sorted(df['cancer_type'].unique()))
-    
-    # Get mutation counts tested
+    tools_str = ', '.join(tool_display_names)
+
+    cancer_types_str = ', '.join(sorted(df['cancer_type'].unique()))
+
     mutation_counts = sorted(df['num_muts'].unique())
     mut_counts_str = ', '.join([f"{int(m):,}" for m in mutation_counts])
-    
-    # Get data type and relevance info
+
     data_type = df['data_type'].iloc[0] if 'data_type' in df.columns else 'N/A'
-    relevance = df['relevance'].iloc[0] if 'relevance' in df.columns else 'N/A'
-    
-    # Format unknown signature information
+    relevance_val = df['relevance'].iloc[0] if 'relevance' in df.columns else 'N/A'
+
     if unknown_sig_config and unknown_sig_config.get('num_unknowns', 0) > 0:
         num_unknowns = unknown_sig_config['num_unknowns']
         weights = unknown_sig_config.get('weights', [])
-        if weights:
-            weights_pct = [f"{w*100:.1f}%" for w in weights]
-            unknown_weights_str = ', '.join(weights_pct)
-        else:
-            unknown_weights_str = 'N/A'
+        unknown_weights_str = ', '.join(f"{w*100:.1f}%" for w in weights) if weights else 'N/A'
     else:
         num_unknowns = 0
         unknown_weights_str = 0
-    
+
+    cosmic_version_label = cosmic_version_label or "COSMIC SBS signatures"
+
+    # Build unknown signatures description from config (for the Data Generation table below)
+    if unknown_sig_config and unknown_sig_config.get('num_unknowns', 0) > 0:
+        weights = unknown_sig_config.get('weights', [])
+        unknown_sig_description = f"{num_unknowns} unknown signature(s) per sample, randomly selected from excluded COSMIC signatures"
+        if weights:
+            weights_pct = [f"{w*100:.1f}%" for w in weights]
+            unknown_sig_description += f"<br><strong>Contribution weights:</strong> {', '.join(weights_pct)} of total mutations per unknown signature"
+    else:
+        if 'num_unknown_sigs' in df.columns:
+            inferred_unknowns = int(df['num_unknown_sigs'].iloc[0])
+            if inferred_unknowns > 0:
+                unknown_sig_description = f"{inferred_unknowns} unknown signature(s) per sample, randomly selected from excluded COSMIC signatures"
+            else:
+                unknown_sig_description = "No unknown signatures (all signatures available in reference catalog)"
+        else:
+            unknown_sig_description = "Selected signatures excluded from reference catalog (randomly chosen per sample)"
+
     html = f'''
-    <section id="summary" class="section">
-        <h2>Summary</h2>
-        
+    <section id="appendix" class="section">
+        <h2>Appendix: Background &amp; Reference</h2>
+
         <div class="info-box" style="background: #f5f5f5; border-left-color: #666; margin-bottom: 1.5rem;">
             <h3 style="margin-bottom: 0.5rem;">Background</h3>
             <p style="margin-bottom: 0.75rem;">
@@ -781,7 +1067,7 @@ def create_summary_section(df, df_raw=None, unknown_sig_config=None):
                 </span>
             </p>
         </div>
-        
+
         <details>
         <summary style="font-weight: 600; color: #374151; padding: 0.5rem 0; cursor: pointer; user-select: none; list-style: none; display: flex; align-items: center; gap: 0.4rem;">
             <span>▶</span> <span>Benchmark Overview (click to expand)</span>
@@ -794,12 +1080,12 @@ def create_summary_section(df, df_raw=None, unknown_sig_config=None):
             </tr>
             <tr>
                 <td><strong>Tools Compared</strong></td>
-                <td>{n_tools} ({tools})</td>
+                <td>{n_tools} ({tools_str})</td>
                 <td style="color: #555; font-size: 0.9em;">The signature fitting algorithms being benchmarked head-to-head.</td>
             </tr>
             <tr>
                 <td><strong>Cancer Types</strong></td>
-                <td>{n_cancer_types} ({cancer_types})</td>
+                <td>{n_cancer_types} ({cancer_types_str})</td>
                 <td style="color: #555; font-size: 0.9em;">Each cancer type uses its own COSMIC tissue-specific signature catalog, so the set of expected signatures differs per type.</td>
             </tr>
             <tr>
@@ -834,7 +1120,7 @@ def create_summary_section(df, df_raw=None, unknown_sig_config=None):
             </tr>
             <tr>
                 <td><strong>Signature Relevance</strong></td>
-                <td>{relevance}</td>
+                <td>{relevance_val}</td>
                 <td style="color: #555; font-size: 0.9em;"><em>standard</em>: tools see all COSMIC signatures as candidates. <em>relevant</em>: reference is pre-filtered to tissue-specific signatures only.</td>
             </tr>
             <tr>
@@ -867,72 +1153,9 @@ def create_summary_section(df, df_raw=None, unknown_sig_config=None):
                 </div>
             </div>
         </details>
-    </section>
-    '''
-    return html
 
+        <h3 style="margin-top: 2rem;">Experimental Setup</h3>
 
-def _derive_cosmic_label(base_file):
-    """Build a human-readable COSMIC catalog label from the configured base_file path.
-
-    e.g. "input/COSMIC_v3.3.1_SBS_GRCh38.txt" -> "COSMIC v3.3.1 SBS signatures
-    (single base substitutions, GRCh38)". Falls back to a generic label if the
-    filename doesn't match the expected COSMIC naming convention.
-    """
-    if base_file:
-        m = re.match(r"COSMIC_(v[\d.]+)_SBS_(GRCh\d+)", os.path.basename(base_file))
-        if m:
-            version, genome = m.groups()
-            return f"COSMIC {version} SBS signatures (single base substitutions, {genome})"
-    return "COSMIC SBS signatures"
-
-
-def create_experiment_section(df, df_raw=None, unknown_sig_config=None, cosmic_version_label=None):
-    """Create experiment details section with comprehensive explanations.
-
-    Args:
-        df: DataFrame with evaluation metrics
-        df_raw: Optional raw per-realization data
-        unknown_sig_config: Optional dict with unknown signature configuration
-                          {'num_unknowns': int, 'weights': list}
-        cosmic_version_label: Optional human-readable COSMIC catalog label derived
-                          from config's cosmic_signatures.base_file
-    """
-    cosmic_version_label = cosmic_version_label or "COSMIC SBS signatures"
-    num_samples = int(df['num_samples'].iloc[0]) if 'num_samples' in df.columns else 'N/A'
-    
-    # Get number of realizations
-    num_realizations = 'N/A'
-    if df_raw is not None and 'realization' in df_raw.columns:
-        num_realizations = int(df_raw['realization'].nunique())
-    
-    # Build unknown signatures description from config
-    if unknown_sig_config and unknown_sig_config.get('num_unknowns', 0) > 0:
-        num_unknowns = unknown_sig_config['num_unknowns']
-        weights = unknown_sig_config.get('weights', [])
-        
-        unknown_sig_description = f"{num_unknowns} unknown signature(s) per sample, randomly selected from excluded COSMIC signatures"
-        
-        if weights:
-            # Convert weights to percentages
-            weights_pct = [f"{w*100:.1f}%" for w in weights]
-            unknown_sig_description += f"<br><strong>Contribution weights:</strong> {', '.join(weights_pct)} of total mutations per unknown signature"
-    else:
-        # Fallback: Try to infer from dataframe or use generic description
-        num_unknowns = 'N/A'
-        if 'num_unknown_sigs' in df.columns:
-            num_unknowns = int(df['num_unknown_sigs'].iloc[0])
-            if num_unknowns > 0:
-                unknown_sig_description = f"{num_unknowns} unknown signature(s) per sample, randomly selected from excluded COSMIC signatures"
-            else:
-                unknown_sig_description = "No unknown signatures (all signatures available in reference catalog)"
-        else:
-            unknown_sig_description = "Selected signatures excluded from reference catalog (randomly chosen per sample)"
-    
-    html = f'''
-    <section id="experiment" class="section">
-        <h2>Experimental Setup</h2>
-        
         <details>
         <summary style="font-weight: 600; color: #374151; padding: 0.5rem 0; cursor: pointer; user-select: none; list-style: none; display: flex; align-items: center; gap: 0.4rem;">
             <span>▶</span> <span>Data Generation (click to expand)</span>
@@ -1801,7 +2024,145 @@ def create_per_method_sample_plots(df_samples, cancer_type, tools, colors):
         margin=dict(l=60, r=250, t=80, b=100),
         autosize=True
     )
-    
+
+    return fig
+
+
+def create_hard_samples_summary_plot(df_samples, cancer_type, top_n=15):
+    """Summarize per-sample difficulty for cancer types with too many samples to plot
+    individually (see create_per_method_sample_plots, which gets unreadable much past
+    ~10 samples per burden: overlapping x-axis labels, illegible jitter clusters).
+
+    For each mutation burden: rank samples by mean TAE across all tools (pooling tools,
+    not per-tool) — TAE (Total Absolute Error) measures how much of the correct signal
+    was misattributed, a more direct "how wrong is this sample" measure than F1 (which
+    only scores signature presence/absence and can look fine even when weights are far
+    off). Higher mean TAE = harder for everyone, not just one tool. Difficulty is then
+    related to each sample's signature-complexity feature (highest_ENP_known, the ENP —
+    Effective Number of Parties — of the most diffuse known signature active in that
+    sample; already computed by evaluate_tool_performance.py for Section 4). A flatter/
+    more diffuse active signature (high ENP) is harder to attribute correctly, so a
+    positive relationship here would explain why certain samples are uniformly hard.
+
+    Args:
+        df_samples: DataFrame with per-sample metrics (pooled across tools)
+        cancer_type: Cancer type to filter
+        top_n: How many of the hardest samples to show in the ranked bar chart
+    """
+    cancer_samples = df_samples[df_samples['cancer_type'] == cancer_type]
+    if len(cancer_samples) == 0 or 'TAE' not in cancer_samples.columns:
+        return None
+
+    mut_burdens = sorted(cancer_samples['num_muts'].unique())
+    has_enp = 'highest_ENP_known' in cancer_samples.columns
+
+    agg_spec = {'TAE': 'mean'}
+    if 'F1' in cancer_samples.columns:
+        agg_spec['F1'] = 'mean'
+    if has_enp:
+        agg_spec['highest_ENP_known'] = 'mean'
+
+    fig = make_subplots(
+        rows=1, cols=2 if has_enp else 1,
+        subplot_titles=(
+            [f'Hardest {top_n} Samples (mean TAE across tools)', 'Difficulty vs. Signature Complexity (ENP)']
+            if has_enp else [f'Hardest {top_n} Samples (mean TAE across tools)']
+        ),
+        column_widths=[0.42, 0.58] if has_enp else None,
+    )
+
+    all_traces = []
+    trace_burdens = []
+
+    for burden in mut_burdens:
+        burden_data = cancer_samples[cancer_samples['num_muts'] == burden]
+        per_sample = burden_data.groupby('sample').agg(agg_spec).reset_index()
+        per_sample = per_sample.sort_values('TAE', ascending=False)
+        hardest = per_sample.head(top_n)
+        hard_samples = set(hardest['sample'])
+        is_default = bool(burden == mut_burdens[0])
+        tae_max = float(per_sample['TAE'].max()) if len(per_sample) else 1.0
+
+        # Reverse so the single hardest (highest-TAE) sample renders at the top of the
+        # horizontal bar chart instead of the bottom.
+        hardest_display = hardest.iloc[::-1]
+        hover_f1 = (
+            [f"<br>Mean F1: {f:.3f}" for f in hardest_display['F1']] if 'F1' in hardest_display.columns
+            else [''] * len(hardest_display)
+        )
+        bar_trace = go.Bar(
+            x=hardest_display['TAE'],
+            y=[str(s) for s in hardest_display['sample']],
+            orientation='h',
+            marker=dict(
+                color=hardest_display['TAE'], colorscale='RdYlGn_r', cmin=0, cmax=tae_max, showscale=False,
+                line=dict(color='black', width=0.5)
+            ),
+            text=[f"{t:.2f}" for t in hardest_display['TAE']],
+            textposition='outside',
+            customdata=hover_f1,
+            hovertemplate='Sample %{y}<br>Mean TAE: %{x:.3f}%{customdata}<extra></extra>',
+            showlegend=False,
+            visible=is_default,
+        )
+        fig.add_trace(bar_trace, row=1, col=1)
+        all_traces.append(bar_trace)
+        trace_burdens.append(burden)
+
+        if has_enp:
+            is_hard_mask = per_sample['sample'].isin(hard_samples)
+            other = per_sample[~is_hard_mask]
+            hard = per_sample[is_hard_mask]
+
+            scatter_other = go.Scatter(
+                x=other['highest_ENP_known'], y=other['TAE'], mode='markers',
+                marker=dict(color='#9ca3af', size=7, opacity=0.6),
+                name='Other samples',
+                text=[str(s) for s in other['sample']],
+                hovertemplate='Sample %{text}<br>ENP (known): %{x:.1f}<br>Mean TAE: %{y:.3f}<extra></extra>',
+                showlegend=is_default, legendgroup='other',
+                visible=is_default,
+            )
+            scatter_hard = go.Scatter(
+                x=hard['highest_ENP_known'], y=hard['TAE'], mode='markers',
+                marker=dict(color='#dc2626', size=9, line=dict(color='black', width=1)),
+                name=f'Hardest {top_n}',
+                text=[str(s) for s in hard['sample']],
+                hovertemplate='Sample %{text}<br>ENP (known): %{x:.1f}<br>Mean TAE: %{y:.3f}<extra></extra>',
+                showlegend=is_default, legendgroup='hard',
+                visible=is_default,
+            )
+            fig.add_trace(scatter_other, row=1, col=2)
+            all_traces.append(scatter_other)
+            trace_burdens.append(burden)
+            fig.add_trace(scatter_hard, row=1, col=2)
+            all_traces.append(scatter_hard)
+            trace_burdens.append(burden)
+
+    buttons = []
+    for burden in mut_burdens:
+        visible = [tb == burden for tb in trace_burdens]
+        buttons.append(dict(
+            label=f"{int(burden):,} mutations", method='update',
+            args=[{'visible': visible}, {'title': {'text': f'Hardest Samples — {int(burden):,} Mutations'}}]
+        ))
+
+    fig.update_layout(
+        title_text=f'Hardest Samples — {int(mut_burdens[0]):,} Mutations',
+        height=max(420, 30 * top_n),
+        margin=dict(l=140, r=40, t=90, b=60),
+        updatemenus=[dict(
+            buttons=buttons, direction='down', pad={'r': 10, 't': 10}, showactive=True,
+            x=1.0, xanchor='right', y=1.15, yanchor='top',
+            bgcolor='white', bordercolor='#ccc', borderwidth=1,
+        )],
+        autosize=True,
+    )
+    fig.update_xaxes(title_text='Mean TAE across tools', row=1, col=1)
+    if has_enp:
+        fig.update_xaxes(title_text='ENP of most diffuse known signature (1–96)', row=1, col=2)
+        fig.update_yaxes(title_text='Mean TAE across tools', row=1, col=2)
+
     return fig
 
 
@@ -2332,27 +2693,32 @@ def create_precision_recall_subplots(df, cancer_type, tools, colors, df_per_samp
     return fig
 
 
-def create_metrics_grid(df, cancer_type, tools, colors, df_per_sample=None):
+def create_metrics_grid(df, cancer_type, tools, colors, df_per_sample=None, pooled=False):
     """
     Create 2x3 grid of performance metrics vs mutation count.
     Shows mean across all samples/realizations with variance as error bars.
-    
+
     Args:
         df: DataFrame with evaluation metrics
         cancer_type: Cancer type name (for display; if 'cancer_type' column not present, uses df as-is)
         tools: List of tool names
         colors: Dict mapping tool names to colors
         df_per_sample: DataFrame with per-sample metrics for error bars
+        pooled: If True, this is a cross-cancer-type aggregate view -- df and df_per_sample are
+            used as-is (no cancer_type filtering), since `cancer_type` is just a display label
+            here (e.g. "All Cancer Types (Pooled)") and won't match any real row. Without this,
+            filtering df_per_sample by that label matches zero rows and silently drops every
+            tool/metric from the grid.
     """
     from plotly.subplots import make_subplots
     import plotly.graph_objects as go
-    
+
     # Filter by cancer type if the column exists, otherwise use the dataframe as-is
-    if 'cancer_type' in df.columns:
-        cancer_df = df[df['cancer_type'] == cancer_type]
-    else:
+    if pooled or 'cancer_type' not in df.columns:
         cancer_df = df
-    
+    else:
+        cancer_df = df[df['cancer_type'] == cancer_type]
+
     # Create 2x3 subplot grid
     fig = make_subplots(
         rows=2, cols=3,
@@ -2360,7 +2726,7 @@ def create_metrics_grid(df, cancer_type, tools, colors, df_per_sample=None):
         vertical_spacing=0.15,
         horizontal_spacing=0.12
     )
-    
+
     metric_mapping = [
         ('F1', ['F1', 'F1_mean'], 1, 1),
         ('TAE', ['TAE', 'TAE_mean'], 1, 2),
@@ -2369,16 +2735,16 @@ def create_metrics_grid(df, cancer_type, tools, colors, df_per_sample=None):
         ('num_FP', ['num_FP_sigs', 'num_FP'], 2, 2),
         ('num_FN', ['num_FN_sigs', 'num_FN'], 2, 3),
     ]
-    
+
     # Use per-sample data if available for proper error bars
     use_per_sample = df_per_sample is not None and len(df_per_sample) > 0
     if use_per_sample:
         # Filter per-sample data by cancer type if the column exists
-        if 'cancer_type' in df_per_sample.columns:
-            cancer_per_sample = df_per_sample[df_per_sample['cancer_type'] == cancer_type]
-        else:
+        if pooled or 'cancer_type' not in df_per_sample.columns:
             cancer_per_sample = df_per_sample
-    
+        else:
+            cancer_per_sample = df_per_sample[df_per_sample['cancer_type'] == cancer_type]
+
     for tool in tools:
         tool_data = cancer_df[cancer_df['tool'] == tool]
         
@@ -2524,199 +2890,6 @@ def create_metrics_grid(df, cancer_type, tools, colors, df_per_sample=None):
         showlegend=True,
         legend=dict(x=1.05, y=1, itemdoubleclick='toggleothers'),
         hovermode='closest',
-        autosize=True
-    )
-    
-    return fig
-
-
-def create_old_metrics_grid_UNUSED(df, cancer_type, tools, colors, df_per_sample=None):
-    """
-    Create 2x3 grid of performance metrics vs mutation count.
-    Shows mean across all samples/realizations with variance as error bars.
-    
-    Args:
-        df: DataFrame with evaluation metrics (aggregated by cancer type)
-        cancer_type: Cancer type name (for display)
-        tools: List of tool names
-        colors: Dict mapping tool names to colors
-        df_per_sample: DataFrame with per-sample data for computing variance and theoretical thresholds
-    """
-    fig = make_subplots(
-        rows=2, cols=3,
-        subplot_titles=['F1 ↑', 'TAE ↓', 'MCC ↑',
-                       'nRMSE ↓', 'FP Sigs', 'FN Sigs'],
-        vertical_spacing=0.15,
-        horizontal_spacing=0.1
-    )
-    
-    # Map metric display names to potential column names in the data
-    metric_mapping = [
-        ('F1', ['F1', 'F1_mean'], 1, 1),
-        ('TAE', ['TAE', 'TAE_mean'], 1, 2),
-        ('MCC', ['MCC', 'MCC_mean'], 1, 3),
-        ('nRMSE', ['nRMSE', 'nRMSE_mean'], 2, 1),
-        ('num_FP', ['num_FP_sigs', 'num_FP'], 2, 2),
-        ('num_FN', ['num_FN_sigs', 'num_FN'], 2, 3),
-    ]
-    
-    # Use per-sample data if available for proper error bars
-    use_per_sample = df_per_sample is not None and len(df_per_sample) > 0
-    if use_per_sample:
-        cancer_per_sample = df_per_sample[df_per_sample['cancer_type'] == cancer_type]
-    
-    for tool in tools:
-        tool_data = df[df['tool'] == tool]
-        
-        if len(tool_data) == 0:
-            continue
-        
-        for metric_name, possible_cols, row, col in metric_mapping:
-            # Use per-sample data for aggregation if available
-            if use_per_sample and metric_name in cancer_per_sample.columns:
-                tool_per_sample = cancer_per_sample[cancer_per_sample['tool'] == tool]
-                
-                if len(tool_per_sample) == 0:
-                    continue
-                
-                # Group by num_muts and compute statistics across all samples×realizations
-                grouped = tool_per_sample.groupby('num_muts')[metric_name].agg(['mean', 'std', 'count']).reset_index()
-                
-                # Use SEM for error bars
-                grouped['sem'] = grouped['std'] / np.sqrt(grouped['count'])
-                
-                error_y = dict(
-                    array=grouped['sem'],
-                    type='data',
-                    visible=True,
-                    thickness=1.5,
-                    width=3
-                )
-                
-                fig.add_trace(
-                    go.Scatter(
-                        x=grouped['num_muts'],
-                        y=grouped['mean'],
-                        mode='lines+markers',
-                        name=tool,
-                        line=dict(color=colors.get(tool, '#999'), width=2),
-                        marker=dict(size=8, color=colors.get(tool, '#999')),
-                        error_y=error_y,
-                        showlegend=(row == 1 and col == 1),
-                        legendgroup=tool,
-                        text=[f"{int(m):,} muts<br>n={int(n)}<br>Std: {s:.3f}" 
-                              for m, n, s in zip(grouped['num_muts'], grouped['count'], grouped['std'])],
-                        hovertemplate='<b>%{fullData.name}</b><br>%{text}<br>Mean: %{y:.3f}<extra></extra>'
-                    ),
-                    row=row, col=col
-                )
-            else:
-                # Fallback: use aggregated data (no error bars)
-                metric_col = None
-                for col_name in possible_cols:
-                    if col_name in tool_data.columns:
-                        metric_col = col_name
-                        break
-                
-                if metric_col is None:
-                    continue
-                
-                fig.add_trace(
-                    go.Scatter(
-                        x=tool_data['num_muts'],
-                        y=tool_data[metric_col],
-                        mode='lines+markers',
-                        name=tool,
-                        line=dict(color=colors.get(tool, '#999'), width=2),
-                        marker=dict(size=8, color=colors.get(tool, '#999')),
-                        showlegend=(row == 1 and col == 1),
-                        legendgroup=tool,
-                        hovertemplate='<b>%{fullData.name}</b><br>Mean: %{y:.3f}<extra></extra>'
-                    ),
-                    row=row, col=col
-                )
-    
-    # Add theoretical threshold lines if available
-    # Try per-sample data first, then fall back to aggregated data
-    threshold_source = df_per_sample if df_per_sample is not None else df
-    cancer_threshold = threshold_source[threshold_source['cancer_type'] == cancer_type]
-    
-    if len(cancer_threshold) > 0:
-        # Get mutation burdens for x-axis
-        all_muts = sorted(df['num_muts'].unique())
-        
-        # TAE threshold (global value - same for all samples)
-        if 'theoretical_min_TAE' in cancer_threshold.columns:
-            theoretical_tae = cancer_threshold['theoretical_min_TAE'].iloc[0]
-            if not np.isnan(theoretical_tae) and theoretical_tae > 0:
-                fig.add_trace(
-                    go.Scatter(
-                        x=all_muts,
-                        y=[theoretical_tae] * len(all_muts),
-                        mode='lines',
-                        name='Theoretical Limit',
-                        line=dict(color='red', width=2, dash='dash'),
-                        showlegend=True,
-                        legendgroup='threshold',
-                        hovertemplate=f'Theoretical Min TAE: {theoretical_tae:.3f}<extra></extra>'
-                    ),
-                    row=1, col=2  # TAE subplot
-                )
-        
-        # F1 threshold
-        if 'theoretical_max_F1' in cancer_threshold.columns:
-            # Average across all samples if using per-sample data
-            avg_f1 = cancer_threshold['theoretical_max_F1'].mean()
-            if not np.isnan(avg_f1) and avg_f1 < 1.0:
-                fig.add_trace(
-                    go.Scatter(
-                        x=all_muts,
-                        y=[avg_f1] * len(all_muts),
-                        mode='lines',
-                        name='Theoretical Limit',
-                        line=dict(color='red', width=2, dash='dash'),
-                        showlegend=False,
-                        legendgroup='threshold',
-                        hovertemplate=f'Theoretical Max F1: {avg_f1:.3f}<extra></extra>'
-                    ),
-                    row=1, col=1  # F1 subplot
-                )
-        
-        # MCC threshold
-        if 'theoretical_max_MCC' in cancer_threshold.columns:
-            # Average across all samples if using per-sample data
-            avg_mcc = cancer_threshold['theoretical_max_MCC'].mean()
-            if not np.isnan(avg_mcc) and avg_mcc < 1.0:
-                fig.add_trace(
-                    go.Scatter(
-                        x=all_muts,
-                        y=[avg_mcc] * len(all_muts),
-                        mode='lines',
-                        name='Theoretical Limit',
-                        line=dict(color='red', width=2, dash='dash'),
-                        showlegend=False,
-                        legendgroup='threshold',
-                        hovertemplate=f'Theoretical Max MCC: {avg_mcc:.3f}<extra></extra>'
-                    ),
-                    row=1, col=3  # MCC subplot
-                )
-        
-        # Note: No theoretical thresholds for nRMSE, FP, or FN
-        # - nRMSE: theoretical minimum is 0 (perfect reconstruction)
-        # - FP: theoretical minimum is 0 (no false positives)
-        # - FN: theoretical minimum is 0 (no false negatives)
-        # These are trivial limits and don't provide useful context
-    
-    # Update x-axes to log scale
-    for col in range(1, 4):
-        fig.update_xaxes(type='log', title_text='Mutations', row=1, col=col)
-        fig.update_xaxes(type='log', title_text='Mutations', row=2, col=col)
-    
-    fig.update_layout(
-        height=700,
-        title_text=f'Performance Metrics vs Mutation Burden<br><sub>Mean ± SEM across all samples and realizations</sub>',
-        showlegend=True,
-        legend=dict(x=1.05, y=1, itemdoubleclick='toggleothers'),
         autosize=True
     )
     
@@ -3883,8 +4056,767 @@ def create_interactive_group_comparison_html(df_per_sample, cancer_type, tools, 
 """
     
     return html
+
+
+def create_feature_metric_scatter_widget(
+        features_tsv_path: str,
+        per_sample_metrics_tsv: str,
+        widget_id: str = 'feature_metric_widget',
+        data_df=None,
+        data_json: str = None,
+        colors: dict = None
+) -> str:
+    """Return HTML + JS for interactive boxplot: feature binned low/high vs metric distribution.
+
+    Args:
+        features_tsv_path: path to TSV file with scalar features per sample (DEPRECATED if data_df provided)
+        per_sample_metrics_tsv: path to TSV with per-sample metrics (DEPRECATED if data_df provided)
+        widget_id: unique DOM id prefix for this widget
+        data_df: pandas DataFrame with all data (preferred over file paths to avoid CORS issues)
+        data_json: pre-serialized {header, rows} JSON string; if given, skips serializing data_df again
+            (callers embedding this widget once per tab should serialize the shared data once and reuse it)
+        colors: tool -> hex color mapping, e.g. from get_tool_colors(); falls back to gray if omitted
+
+    The function produces a small interactive UI where the user selects:
+        - feature (to bin into low/high)
+        - metric (Y-axis for boxplot)
+        - mutation burden filter
+
+    Shows separate boxplots for each tool, split by low vs high feature values.
+    Output: HTML string to embed in report.
+    """
+    html = f"""
+<div style="background: white; padding: 1.5rem; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); margin: 1rem 0;">
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1rem; margin-bottom: 1.5rem;">
+        <div>
+            <label style="display: block; font-weight: 600; color: #374151; margin-bottom: 0.5rem;">
+                📊 Feature (binned Low/High)
+            </label>
+            <select id="{widget_id}_feature" style="width: 100%; padding: 0.5rem; border: 2px solid #e5e7eb; border-radius: 6px; font-size: 14px; background: white; cursor: pointer;">
+                <option value="">Select feature...</option>
+            </select>
+        </div>
+        <div>
+            <label style="display: block; font-weight: 600; color: #374151; margin-bottom: 0.5rem;">
+                📈 Metric (distribution)
+            </label>
+            <select id="{widget_id}_metric" style="width: 100%; padding: 0.5rem; border: 2px solid #e5e7eb; border-radius: 6px; font-size: 14px; background: white; cursor: pointer;">
+                <option value="">Select metric...</option>
+            </select>
+        </div>
+        <div>
+            <label style="display: block; font-weight: 600; color: #374151; margin-bottom: 0.5rem;">
+                🧬 Mutation Burden
+            </label>
+            <select id="{widget_id}_muts" style="width: 100%; padding: 0.5rem; border: 2px solid #e5e7eb; border-radius: 6px; font-size: 14px; background: white; cursor: pointer;">
+                <option value="">All</option>
+            </select>
+        </div>
+    </div>
+
+    <div style="text-align: center; margin-bottom: 1rem;">
+        <button id="{widget_id}_update" style="
+            background: linear-gradient(135deg, #7c3aed 0%, #5b21b6 100%);
+            color: white;
+            border: none;
+            padding: 0.75rem 2rem;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            box-shadow: 0 4px 6px rgba(124, 58, 237, 0.3);
+            transition: all 0.3s ease;
+        " onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='0 6px 12px rgba(124, 58, 237, 0.4)';"
+           onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 4px 6px rgba(124, 58, 237, 0.3)';">
+            🎯 Update Plot
+        </button>
+    </div>
+
+    <div id="{widget_id}_plot" style="width: 100%; height: 600px; border: 2px solid #f3f4f6; border-radius: 8px; background: #fafafa;"></div>
+
+    <div id="{widget_id}_stats" style="margin-top: 1rem; padding: 1rem; background: #f9fafb; border-radius: 6px; display: none;">
+        <div style="display: flex; justify-content: center; align-items: center; gap: 2rem; font-size: 14px;">
+            <div>
+                <span style="color: #6b7280;">Median threshold:</span>
+                <strong id="{widget_id}_threshold" style="color: #111827; margin-left: 0.5rem;">-</strong>
+            </div>
+            <div>
+                <span style="color: #6b7280;">N (Low):</span>
+                <strong id="{widget_id}_n_low" style="color: #111827; margin-left: 0.5rem;">-</strong>
+            </div>
+            <div>
+                <span style="color: #6b7280;">N (High):</span>
+                <strong id="{widget_id}_n_high" style="color: #111827; margin-left: 0.5rem;">-</strong>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+(function() {{
+    const widgetId = '{widget_id}';
+
+    // Feature columns (complexity features)
+    const featureCols = ['highest_ENP_known', 'highest_ENP_unknown'];
+
+    // Metric columns (performance metrics)
+    const metricCols = ['TAE', 'F1', 'MCC', 'P', 'R', 'theoretical_min_TAE'];
+
+    // Metadata columns
+    const metadataCols = ['data_type', 'cancer_type', 'num_muts_condition', 'relevance',
+                          'tool', 'realization', 'sample', 'num_muts'];
+
+    // Embedded data (avoids CORS issues with file:// protocol)
+    const embeddedData = __DATA__;
+
+    const features = embeddedData;
+    const metrics = embeddedData;  // Same data source
+
+    // Build feature list (only feature columns)
+    const featureSelect = document.getElementById(widgetId + '_feature');
+
+    features.header.forEach(h => {{
+        if (featureCols.includes(h)) {{
+            const opt = document.createElement('option');
+            opt.value = h;
+            opt.text = h;
+            featureSelect.appendChild(opt);
+        }}
+    }});
+
+    // Build metric list (only metric columns)
+    const metricSelect = document.getElementById(widgetId + '_metric');
+
+    metrics.header.forEach(h => {{
+        if (metricCols.includes(h)) {{
+            const opt = document.createElement('option');
+            opt.value = h;
+                opt.text = h;
+                metricSelect.appendChild(opt);
+            }}
+        }});
+
+        // Build mutation burdens list
+        const toolIdx = metrics.header.indexOf('tool');
+        const mutsIdx = metrics.header.indexOf('num_muts');
+        const muts = new Set();
+        if (mutsIdx >= 0) {{
+            metrics.rows.forEach(r => {{
+                if (r[mutsIdx]) muts.add(r[mutsIdx]);
+            }});
+        }}
+        const mutsSelect = document.getElementById(widgetId + '_muts');
+        Array.from(muts).sort((a,b)=>+a-+b).forEach(m => {{
+            const opt = document.createElement('option');
+            opt.value = m;
+            opt.text = m;
+            mutsSelect.appendChild(opt);
+        }});
+
+        // Build data structure for plotting
+        const sampleIdx = metrics.header.indexOf('sample');
+        const dataByToolMuts = new Map(); // tool_muts -> array of {{feature_vals, metric_vals, sample}}
+
+        metrics.rows.forEach((row, idx) => {{
+            const sample = row[sampleIdx];
+            const tool = toolIdx >= 0 ? row[toolIdx] : '';
+            const numMuts = mutsIdx >= 0 ? row[mutsIdx] : '';
+            const key = tool + '_' + numMuts;
+
+            // Get feature values for this row
+            const featureVals = {{}};
+            features.header.forEach((h, i) => {{
+                if (featureCols.includes(h)) {{
+                    featureVals[h] = row[i];  // Same row if same file
+                }}
+            }});
+
+            // Get metric values for this row
+            const metricVals = {{}};
+            metrics.header.forEach((h, i) => {{
+                if (metricCols.includes(h)) {{
+                    metricVals[h] = row[i];
+                }}
+            }});
+
+            if (!dataByToolMuts.has(key)) {{
+                dataByToolMuts.set(key, []);
+            }}
+            dataByToolMuts.get(key).push({{
+                sample,
+                tool,
+                numMuts,
+                features: featureVals,
+                metrics: metricVals
+            }});
+        }});
+
+        function updatePlot() {{
+            const feat = featureSelect.value;
+            const metric = metricSelect.value;
+
+            if (!feat || !metric) {{
+                document.getElementById('{widget_id}_plot').innerHTML =
+                    '<div style="display:flex; align-items:center; justify-content:center; height:100%; color:#9ca3af; font-size:18px;">📊 Select a feature and metric to visualize</div>';
+                return;
+            }}
+
+            const selectedMuts = mutsSelect.value;
+
+            // Collect all data points with feature and metric values
+            const allData = [];
+
+            dataByToolMuts.forEach((dataPoints, key) => {{
+                dataPoints.forEach(point => {{
+                    const numMuts = point.numMuts;
+
+                    // Filter by selected mutation burden
+                    if (selectedMuts && numMuts !== selectedMuts) return;
+
+                    // Get feature and metric values
+                    const featureVal = parseFloat(point.features[feat]);
+                    const metricVal = parseFloat(point.metrics[metric]);
+
+                    // Skip if invalid
+                    if (isNaN(featureVal) || isNaN(metricVal)) return;
+
+                    allData.push({{
+                        tool: point.tool,
+                        feature: featureVal,
+                        metric: metricVal,
+                        sample: point.sample,
+                        numMuts: numMuts
+                    }});
+                }});
+            }});
+
+            if (allData.length === 0) {{
+                document.getElementById('{widget_id}_plot').innerHTML =
+                    '<div style="display:flex; align-items:center; justify-content:center; height:100%; color:#ef4444; font-size:16px;">❌ No data available for selected options</div>';
+                return;
+            }}
+
+            // Calculate median threshold for binning (proper median calculation)
+            const featureValues = allData.map(d => d.feature);
+            featureValues.sort((a,b) => a - b);
+            let medianThreshold;
+            if (featureValues.length % 2 === 0) {{
+                // Even number: average of two middle values
+                medianThreshold = (featureValues[featureValues.length/2 - 1] + featureValues[featureValues.length/2]) / 2;
+            }} else {{
+                // Odd number: middle value
+                medianThreshold = featureValues[Math.floor(featureValues.length / 2)];
+            }}
+
+            // Bin data into low/high by feature value (using < for high to handle ties at median)
+            const dataLow = allData.filter(d => d.feature < medianThreshold);
+            const dataHigh = allData.filter(d => d.feature >= medianThreshold);
+
+            // If all values are the same (or very skewed), split evenly to avoid empty groups
+            if (dataLow.length === 0 || dataHigh.length === 0) {{
+                allData.sort((a, b) => a.feature - b.feature);
+                const midPoint = Math.floor(allData.length / 2);
+                dataLow.length = 0;
+                dataHigh.length = 0;
+                dataLow.push(...allData.slice(0, midPoint));
+                dataHigh.push(...allData.slice(midPoint));
+            }}
+
+            // Group by tool for each bin
+            const tools = [...new Set(allData.map(d => d.tool))].sort();
+
+            // Tool colors - embedded from ReportMetadata.tool_colors (see get_tool_colors())
+            const toolColors = __TOOL_COLORS__;
+
+            // Create boxplot traces - separate trace for each tool, grouped by Low/High
+            const traces = [];
+
+            // For each tool, create a Low trace and a High trace
+            tools.forEach(tool => {{
+                const toolDataLow = dataLow.filter(d => d.tool === tool);
+                const toolDataHigh = dataHigh.filter(d => d.tool === tool);
+
+                // Low trace for this tool
+                if (toolDataLow.length > 0) {{
+                    traces.push({{
+                        y: toolDataLow.map(d => d.metric),
+                        x: Array(toolDataLow.length).fill(tool),
+                        name: 'Low',
+                        type: 'box',
+                        boxpoints: 'all',
+                        jitter: 0.3,
+                        pointpos: 0,
+                        marker: {{
+                            size: 4,
+                            opacity: 0.5,
+                            color: toolColors[tool] || '#6b7280'
+                        }},
+                        line: {{
+                            color: toolColors[tool] || '#6b7280',
+                            width: 2
+                        }},
+                        fillcolor: `rgba${{(toolColors[tool] || '#6b7280').replace('#','').match(/.{{2}}/g).map(x=>parseInt(x,16)).join(',')}},.3)`,
+                        text: toolDataLow.map(d => `Sample: ${{d.sample}}<br>${{feat}}: ${{d.feature.toFixed(3)}}<br>${{metric}}: ${{d.metric.toFixed(3)}}`),
+                        hovertemplate: `<b>${{tool}} - Low</b><br>%{{text}}<extra></extra>`,
+                        offsetgroup: 'Low',
+                        legendgroup: 'Low',
+                        showlegend: tool === tools[0]  // Only show legend for first tool
+                    }});
+                }}
+
+                // High trace for this tool
+                if (toolDataHigh.length > 0) {{
+                    traces.push({{
+                        y: toolDataHigh.map(d => d.metric),
+                        x: Array(toolDataHigh.length).fill(tool),
+                        name: 'High',
+                        type: 'box',
+                        boxpoints: 'all',
+                        jitter: 0.3,
+                        pointpos: 0,
+                        marker: {{
+                            size: 4,
+                            opacity: 0.6,
+                            color: toolColors[tool] || '#6b7280'
+                        }},
+                        line: {{
+                            color: toolColors[tool] || '#6b7280',
+                            width: 2
+                        }},
+                        fillcolor: `rgba${{(toolColors[tool] || '#6b7280').replace('#','').match(/.{{2}}/g).map(x=>parseInt(x,16)).join(',')}},.5)`,
+                        text: toolDataHigh.map(d => `Sample: ${{d.sample}}<br>${{feat}}: ${{d.feature.toFixed(3)}}<br>${{metric}}: ${{d.metric.toFixed(3)}}`),
+                        hovertemplate: `<b>${{tool}} - High</b><br>%{{text}}<extra></extra>`,
+                        offsetgroup: 'High',
+                        legendgroup: 'High',
+                        showlegend: tool === tools[0]  // Only show legend for first tool
+                    }});
+                }}
+            }});
+
+            // Get theoretical minimum TAE (if available and metric is TAE)
+            let theoreticalMinTAE = null;
+            if (metric === 'TAE' && allData.length > 0 && allData[0].metrics && 'theoretical_min_TAE' in allData[0].metrics) {{
+                theoreticalMinTAE = allData[0].metrics['theoretical_min_TAE'];
+            }}
+
+            // Add theoretical maximum line if applicable
+            if (theoreticalMinTAE !== null && theoreticalMinTAE > 0) {{
+                traces.push({{
+                    x: tools,
+                    y: Array(tools.length).fill(theoreticalMinTAE),
+                    name: 'Theoretical Best (Unknown Sigs)',
+                    type: 'scatter',
+                    mode: 'lines',
+                    line: {{
+                        color: '#ef4444',
+                        width: 2,
+                        dash: 'dash'
+                    }},
+                    showlegend: true,
+                    hovertemplate: `Theoretical Minimum TAE: ${{theoreticalMinTAE.toFixed(4)}}<br>(Due to unknown signatures)<extra></extra>`
+                }});
+            }}
+
+            const layout = {{
+                title: {{
+                    text: `<b>${{metric}}</b> distribution by <b>${{feat}}</b> (Low vs High)`,
+                    font: {{ size: 16, color: '#111827' }}
+                }},
+                xaxis: {{
+                    title: {{ text: 'Tool', font: {{ size: 13, color: '#374151' }} }},
+                    gridcolor: '#e5e7eb',
+                    categoryorder: 'array',
+                    categoryarray: tools
+                }},
+                yaxis: {{
+                    title: {{ text: metric, font: {{ size: 14, color: '#374151' }} }},
+                    gridcolor: '#e5e7eb',
+                    zeroline: true,
+                    zerolinecolor: '#9ca3af',
+                    zerolinewidth: 1
+                }},
+                showlegend: true,
+                legend: {{
+                    x: 1.02,
+                    y: 1,
+                    bgcolor: 'rgba(255,255,255,0.9)',
+                    bordercolor: '#e5e7eb',
+                    borderwidth: 1,
+                    title: {{ text: 'Group', font: {{ size: 12, color: '#374151' }} }}
+                }},
+                plot_bgcolor: 'white',
+                paper_bgcolor: '#fafafa',
+                margin: {{ l: 70, r: 120, t: 70, b: 90 }},
+                boxmode: 'group',
+                boxgap: 0.2,
+                boxgroupgap: 0.1
+            }};
+
+            Plotly.newPlot('{widget_id}_plot', traces, layout, {{responsive:true, displayModeBar: true}});
+
+            // Update stats
+            document.getElementById('{widget_id}_stats').style.display = 'block';
+            document.getElementById('{widget_id}_threshold').textContent = medianThreshold.toFixed(3);
+            document.getElementById('{widget_id}_n_low').textContent = dataLow.length;
+            document.getElementById('{widget_id}_n_high').textContent = dataHigh.length;
+        }}
+
+        document.getElementById('{widget_id}_update').addEventListener('click', updatePlot);
+
+        // Pre-select first options and auto-plot
+        if (featureSelect.options.length > 1) featureSelect.selectedIndex = 1;
+        if (metricSelect.options.length > 1) metricSelect.selectedIndex = 1;
+        if (mutsSelect.options.length) mutsSelect.selectedIndex = 0;
+
+        // Auto-update on load
+        setTimeout(updatePlot, 100);
+}})();
+</script>
+"""
+    # Prepare data for embedding (avoid CORS issues with file:// protocol)
+    import json
+
+    if data_json is None:
+        if data_df is not None:
+            # Use provided dataframe
+            df = data_df
+        else:
+            # Fallback to reading file (but this won't work with file:// protocol)
+            df = pd.read_csv(per_sample_metrics_tsv, sep='\t')
+
+        # Convert dataframe to {{header: [...], rows: [...]}} format for JavaScript
+        data_dict = {
+            'header': df.columns.tolist(),
+            'rows': df.astype(str).values.tolist()  # Convert all to strings for JSON
+        }
+        data_json = json.dumps(data_dict)
+
+    # Embed data and tool colors directly in JavaScript to avoid fetch/CORS issues
+    html = html.replace('__DATA__', data_json)
+    html = html.replace('__TOOL_COLORS__', json.dumps(colors or {}))
+
+    return html
+
+
+def build_signature_activity_data(results_dir, df, tools, colors, out_of_reference_sigs=None,
+                                   relevance='standard', selected_rep=None):
+    """Load per-sample ground-truth vs. predicted signature activities for the
+    Signature Activity widget (see create_signature_activity_widget below).
+
+    Reads two things straight off disk (these aren't in any aggregated dataframe
+    already loaded by the report):
+      - ground truth: results_dir/generated_data/synthetic/weights_{cancer}-w_{rep}-{burden}.dat
+        (signature fractions per sample; multiplied by burden to get mutation counts)
+      - predictions: results_dir/synthetic/{cancer}/{relevance}/{burden}/rep_{rep}/{tool}_contribution.dat
+
+    Returns a JSON string ready to embed client-side, or None if synthetic
+    ground-truth data isn't available for this run (e.g. real-sample-only reports).
+    """
+    if not results_dir or df is None or df.empty:
+        return None
+
+    synth_df = df[df['data_type'] == 'synthetic'] if 'data_type' in df.columns else df
+    if synth_df.empty or 'cancer_type' not in synth_df.columns or 'num_muts' not in synth_df.columns:
+        return None
+
+    cancer_types = sorted(synth_df['cancer_type'].unique())
+    burdens = sorted(int(b) for b in synth_df['num_muts'].unique())
+    if selected_rep is None:
+        selected_rep = int(synth_df['replicate'].min()) if 'replicate' in synth_df.columns else 0
+
+    unknown_sigs = set(out_of_reference_sigs or [])
+    results_root = Path(results_dir)
+    sorted_tools = sorted(tools)
+
+    marker_options = ['circle', 'square', 'diamond', 'cross', 'x', 'triangle-up',
+                       'triangle-down', 'pentagon', 'hexagon', 'star']
+    tool_markers = {t: marker_options[i % len(marker_options)] for i, t in enumerate(sorted_tools)}
+
+    samples = None
+    truth_data = {}
+    pred_data = {}
+
+    for cancer_type in cancer_types:
+        for burden in burdens:
+            weights_path = (results_root / 'generated_data' / 'synthetic' /
+                             f'weights_{cancer_type}-w_{selected_rep}-{burden}.dat')
+            if not weights_path.exists():
+                continue
+            truth_df = pd.read_csv(weights_path, sep='\t', index_col=0)
+            if samples is None:
+                samples = sorted(truth_df.columns.tolist())
+
+            for sample in truth_df.columns:
+                counts = truth_df[sample] * burden
+                active = counts[counts > 0]
+                if not active.empty:
+                    truth_data[f"{cancer_type}|{burden}|{sample}"] = {
+                        sig: round(float(v), 2) for sig, v in active.items()
+                    }
+
+            base_dir = results_root / 'synthetic' / cancer_type / relevance / str(burden) / f'rep_{selected_rep}'
+            for tool in sorted_tools:
+                contrib_path = base_dir / f'{tool}_contribution.dat'
+                if not contrib_path.exists():
+                    continue
+                pred_df = pd.read_csv(contrib_path, index_col=0)
+                for sample in pred_df.columns:
+                    active = pred_df[sample][pred_df[sample] > 0]
+                    if active.empty:
+                        continue
+                    pred_data[f"{cancer_type}|{burden}|{sample}|{tool}"] = {
+                        sig: round(float(v), 2) for sig, v in active.items()
+                    }
+
+    if not truth_data:
+        return None
+
+    return json.dumps({
+        'cancer_types': cancer_types,
+        'burdens': burdens,
+        'samples': samples or [],
+        'tools': sorted_tools,
+        'tool_colors': colors or {},
+        'tool_markers': tool_markers,
+        'unknown_sigs': sorted(unknown_sigs),
+        'selected_rep': selected_rep,
+        'truth': truth_data,
+        'predictions': pred_data,
+    })
+
+
+def create_signature_activity_widget(data_json, cancer_type, widget_id='sig_activity'):
+    """Return HTML + JS for the interactive ground-truth-vs-predicted signature
+    activity plot: pick a mutation burden / sample (cancer type is fixed to the
+    enclosing tab) and see every tool's predicted signature activities plotted
+    against the ground truth for that one sample. Analogous to the "Signature
+    Activity Comparison" plot in the SigFitTest_workflow penalty analysis report,
+    minus the penalty selector (SigFitBench tools each produce a single
+    contribution file, not a penalty sweep) and minus the cancer-type selector
+    (one widget instance is embedded per cancer-type tab instead).
+    """
+    html = f"""
+<div style="background: white; padding: 1.5rem; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); margin: 1rem 0;">
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 1rem;">
+        <div>
+            <label style="display: block; font-weight: 600; color: #374151; margin-bottom: 0.5rem;">Mutation Burden</label>
+            <select id="{widget_id}_burden" style="width: 100%; padding: 0.5rem; border: 2px solid #e5e7eb; border-radius: 6px; font-size: 14px; background: white; cursor: pointer;"></select>
+        </div>
+        <div>
+            <label style="display: block; font-weight: 600; color: #374151; margin-bottom: 0.5rem;">Sample</label>
+            <select id="{widget_id}_sample" style="width: 100%; padding: 0.5rem; border: 2px solid #e5e7eb; border-radius: 6px; font-size: 14px; background: white; cursor: pointer;"></select>
+        </div>
+    </div>
+    <div id="{widget_id}_plot" style="width: 100%; height: 650px; border: 2px solid #f3f4f6; border-radius: 8px; background: #fafafa;"></div>
+    <p style="color: #6b7280; font-size: 13px; margin-top: 0.75rem; font-style: italic; text-align: center;">
+        Horizontal lines: ground-truth activity (red = reference signature, green = out-of-reference/unknown).
+        Markers: each tool's predicted activity for that signature. Y-axis is log-scale mutation counts.
+        Click a tool in the legend to show/hide it, same as the other plots in this report &mdash;
+        the x-axis updates to drop any signature only that tool predicted.
+    </p>
+</div>
+
+<script>
+(function() {{
+    const widgetId = '{widget_id}';
+    const data = __SIG_ACTIVITY_DATA__;
+    const cancer = {cancer_type!r};
+    const plotDiv = widgetId + '_plot';
+
+    if (!data || !data.cancer_types || !data.cancer_types.includes(cancer)) {{
+        document.getElementById(plotDiv).innerHTML =
+            '<div style="display:flex; align-items:center; justify-content:center; height:100%; color:#9ca3af; font-size:16px;">No per-sample ground-truth data available for this cancer type</div>';
+        return;
+    }}
+
+    const burdenSelect = document.getElementById(widgetId + '_burden');
+    data.burdens.forEach(b => {{
+        const opt = document.createElement('option');
+        opt.value = b; opt.text = b.toLocaleString();
+        burdenSelect.appendChild(opt);
+    }});
+
+    const sampleSelect = document.getElementById(widgetId + '_sample');
+    data.samples.forEach(s => {{
+        const opt = document.createElement('option');
+        opt.value = s; opt.text = s;
+        sampleSelect.appendChild(opt);
+    }});
+
+    const unknownSigs = new Set(data.unknown_sigs || []);
+    const tools = data.tools || [];
+
+    // Which tools are currently shown. Starts as "all of them"; updated by reading Plotly's
+    // own trace.visible state after a legend click (see attachRestyleListener below) — the
+    // legend itself behaves exactly like every other plot's legend (plain Plotly default
+    // click-to-toggle, nothing intercepted or prevented).
+    let hiddenTools = new Set();
+    let syncingAxis = false;  // true while we're applying our own axis-rebuild react() call
+
+    function horizontalLineTrace(xPos, truthRaw, sigs, color, name) {{
+        const x = [], y = [], text = [];
+        sigs.forEach(sig => {{
+            for (let k = 0; k < 20; k++) {{
+                x.push(xPos[sig] - 0.35 + k * 0.035);
+                y.push(truthRaw[sig]);
+                text.push(`${{sig}}: ${{truthRaw[sig].toFixed(1)}}`);
+            }}
+            x.push(null); y.push(null); text.push(null);
+        }});
+        if (!x.length) return null;
+        return {{
+            x, y, mode: 'lines', type: 'scatter',
+            line: {{ color, width: 3 }}, name, text,
+            hovertemplate: '%{{text}}<extra></extra>',
+        }};
+    }}
+
+    function buildFigure() {{
+        const burden = burdenSelect.value;
+        const sample = sampleSelect.value;
+        const visibleTools = tools.filter(t => !hiddenTools.has(t));
+
+        const truthRaw = data.truth[`${{cancer}}|${{burden}}|${{sample}}`] || {{}};
+        const truthSigs = new Set(Object.keys(truthRaw));
+
+        // Load every tool's predictions (not just visible ones) so a re-shown tool's trace has
+        // real data immediately; only *visible* tools' predictions decide which signature
+        // columns exist on the axis.
+        const toolPreds = {{}};
+        const predOnlySigsSet = new Set();
+        tools.forEach(tool => {{
+            const preds = data.predictions[`${{cancer}}|${{burden}}|${{sample}}|${{tool}}`] || {{}};
+            toolPreds[tool] = preds;
+            if (!hiddenTools.has(tool)) {{
+                Object.keys(preds).forEach(sig => {{ if (!truthSigs.has(sig)) predOnlySigsSet.add(sig); }});
+            }}
+        }});
+
+        const truthKnown = [...truthSigs].filter(s => !unknownSigs.has(s)).sort();
+        const truthUnknown = [...truthSigs].filter(s => unknownSigs.has(s)).sort();
+        const predOnly = [...predOnlySigsSet].sort();
+        const orderedSigs = [...truthKnown, ...truthUnknown, ...predOnly];
+
+        const titleBase = `${{cancer}} | ${{Number(burden).toLocaleString()}} mutations | ${{sample}}`;
+
+        if (orderedSigs.length === 0) {{
+            return {{
+                traces: [],
+                layout: {{
+                    title: {{ text: `No data: ${{titleBase}}` }},
+                    annotations: [{{
+                        text: 'No Data Available<br>This combination may not have been run or all signatures have zero activity.',
+                        xref: 'paper', yref: 'paper', x: 0.5, y: 0.5, xanchor: 'center', yanchor: 'middle',
+                        showarrow: false, font: {{ size: 16, color: '#666' }}
+                    }}],
+                    xaxis: {{ visible: false }}, yaxis: {{ visible: false }},
+                    height: 650, margin: {{ t: 80, b: 60, l: 60, r: 60 }}
+                }}
+            }};
+        }}
+
+        const xPos = {{}};
+        orderedSigs.forEach((sig, i) => {{ xPos[sig] = i; }});
+
+        // Fixed offset basis (over the full tool list, not just visible ones) so a tool's
+        // marker position doesn't jump around every time some other tool is toggled.
+        const n = tools.length;
+        const toolOffset = {{}};
+        tools.forEach((t, i) => {{ toolOffset[t] = n > 1 ? -0.15 + (i / (n - 1)) * 0.3 : 0; }});
+
+        const traces = [];
+        const truthKnownTrace = horizontalLineTrace(xPos, truthRaw, truthKnown, '#C1121F', 'Truth (Reference)');
+        if (truthKnownTrace) traces.push(truthKnownTrace);
+        const truthUnknownTrace = horizontalLineTrace(xPos, truthRaw, truthUnknown, '#2DA44E', 'Truth (Unknown)');
+        if (truthUnknownTrace) traces.push(truthUnknownTrace);
+
+        // Every tool gets a trace with its real data, whether currently shown or not — a
+        // trace forced to completely empty x/y combined with visible:'legendonly' can make
+        // Plotly drop the legend entry outright instead of just dimming it, which is what
+        // made hidden tools un-clickable before. Hiding is done purely via `visible` below.
+        tools.forEach(tool => {{
+            const color = (data.tool_colors || {{}})[tool] || '#6b7280';
+            const sym = (data.tool_markers || {{}})[tool] || 'circle';
+            const marker = {{ symbol: sym, size: 9, color, line: {{ color: 'black', width: 1 }}, opacity: 0.9 }};
+            const preds = toolPreds[tool];
+            const px = [], py = [], ptext = [];
+            orderedSigs.forEach(sig => {{
+                if (!preds[sig] || preds[sig] <= 0) return;
+                px.push(xPos[sig] + toolOffset[tool]);
+                py.push(preds[sig]);
+                ptext.push(`${{tool}}: ${{sig}} = ${{preds[sig].toFixed(1)}}`);
+            }});
+            traces.push({{
+                x: px, y: py, mode: 'markers', type: 'scatter', marker,
+                name: tool, text: ptext,
+                hovertemplate: '%{{text}}<extra></extra>',
+                visible: hiddenTools.has(tool) ? 'legendonly' : true,
+            }});
+        }});
+
+        return {{
+            traces,
+            layout: {{
+                title: {{ text: `${{titleBase}}<br><sub>Rep ${{data.selected_rep}} | Line = ground truth, markers = predicted</sub>` }},
+                xaxis: {{
+                    tickmode: 'array',
+                    tickvals: orderedSigs.map((_, i) => i),
+                    ticktext: orderedSigs,
+                    tickangle: -45,
+                    tickfont: {{ size: 10 }},
+                    title: 'Signature',
+                }},
+                yaxis: {{ type: 'log', title: 'Mutations' }},
+                legend: {{ orientation: 'v', yanchor: 'top', y: 1, xanchor: 'left', x: 1.02 }},
+                height: 650,
+                margin: {{ t: 80, b: 100, l: 60, r: 160 }},
+                hovermode: 'closest',
+            }}
+        }};
+    }}
+
+    function attachRestyleListener(gd) {{
+        if (gd.__sigActivityRestyleBound) return;
+        gd.__sigActivityRestyleBound = true;
+        // Fires after Plotly's own (un-intercepted) legend click has already applied its
+        // default visibility toggle. We read that resulting state back and rebuild the axis
+        // to drop/restore signatures the now-hidden/shown tool exclusively predicts. Using
+        // Plotly.react (not newPlot) here, after the click has fully finished, avoids the
+        // teardown/race that made legend entries disappear when the rebuild ran synchronously
+        // inside the click handler itself.
+        gd.on('plotly_restyle', () => {{
+            if (syncingAxis) return;  // ignore restyle events caused by our own render() below
+            hiddenTools = new Set(tools.filter(tool => {{
+                const trace = (gd.data || []).find(t => t.name === tool);
+                return trace && trace.visible === 'legendonly';
+            }}));
+            render();
+        }});
+    }}
+
+    function render() {{
+        const {{ traces, layout }} = buildFigure();
+        syncingAxis = true;
+        Plotly.react(plotDiv, traces, layout, {{responsive: true}}).then(gd => {{
+            syncingAxis = false;
+            attachRestyleListener(gd);
+        }});
+    }}
+
+    burdenSelect.addEventListener('change', render);
+    sampleSelect.addEventListener('change', render);
+
+    render();
+}})();
+</script>
+"""
+    return html.replace('__SIG_ACTIVITY_DATA__', data_json)
+
+
 def create_visualizations_section(df, df_per_sample=None, df_bootstrap=None, df_raw=None,
-                                   results_dir=None, id_prefix='', include_plotly_cdn=True):
+                                   results_dir=None, id_prefix='', include_plotly_cdn=True,
+                                   out_of_reference_sigs=None, relevance='standard',
+                                   unknown_sig_config=None):
     """Create main visualizations section with tabs.
 
     Args:
@@ -3895,7 +4827,16 @@ def create_visualizations_section(df, df_per_sample=None, df_bootstrap=None, df_
         results_dir: Optional base results directory for reading contribution files
         id_prefix: String prefix for all HTML element IDs (needed when called multiple times)
         include_plotly_cdn: Whether to include plotly.js CDN link in the first figure
+        unknown_sig_config: Optional dict {'num_unknowns': int, 'weights': list} — the
+            "Does Signature Complexity Affect Tool Performance?" widget only makes sense
+            when some fraction of mutations actually come from unknown signatures, so it's
+            gated on sum(weights) > 0 rather than just the config key being present (configs
+            keep out_of_reference_weights: [0.0] around even for the 0%-unknown baseline run).
     """
+    has_unknown_signal = bool(
+        unknown_sig_config and sum(unknown_sig_config.get('weights') or []) > 0
+    )
+
     # Get tool order and filter to only tools present in data
     tool_order = get_tool_display_order()
     available_tools = set(df['tool'].unique())
@@ -3918,6 +4859,25 @@ def create_visualizations_section(df, df_per_sample=None, df_bootstrap=None, df_
         html += f'<button class="tab {active}" onclick="switchTab(\'{tab_id}-tab\', event)">{cancer_type}</button>\n'
     html += f'<button class="tab" onclick="switchTab(\'{id_prefix}aggregate-tab\', event)">Aggregate Analysis</button>\n'
     html += '</div>\n'
+
+    # Precompute the feature-metric widget's data once: df_per_sample is embedded unfiltered
+    # into every per-cancer-type tab, so serializing it per-iteration would repeat identical work.
+    feature_widget_has_features = False
+    feature_widget_data_json = None
+    if df_per_sample is not None:
+        feature_cols = ['highest_ENP_known', 'highest_ENP_unknown']
+        feature_widget_has_features = any(col in df_per_sample.columns for col in feature_cols)
+        if feature_widget_has_features:
+            feature_widget_data_json = json.dumps({
+                'header': df_per_sample.columns.tolist(),
+                'rows': df_per_sample.astype(str).values.tolist()
+            })
+
+    # Precompute the signature-activity widget's data once (covers all cancer types);
+    # each per-cancer-type tab below embeds its own widget instance scoped to that cancer type.
+    sig_activity_json = build_signature_activity_data(
+        results_dir, df, tools, colors, out_of_reference_sigs, relevance
+    )
 
     # Per-cancer-type tabs
     for i, cancer_type in enumerate(cancer_types):
@@ -4052,16 +5012,45 @@ def create_visualizations_section(df, df_per_sample=None, df_bootstrap=None, df_
                 html += '</div>\n'
                 html += '</div>\n\n'
         
-        # SECTION 3.5: Sample-by-Sample Performance Comparison
+        # SECTION 3.5: Sample-by-Sample Performance Comparison — the per-sample jittered
+        # scatter (create_per_method_sample_plots) becomes unreadable past ~10 samples per
+        # burden (overlapping x-axis labels, illegible jitter clusters), so cancer types
+        # with more samples get a ranked "hardest samples" summary instead.
         if df_per_sample is not None:
-            fig_per_method = create_per_method_sample_plots(df_per_sample, cancer_type, tools, colors)
+            cancer_sample_count = (
+                df_per_sample.loc[df_per_sample['cancer_type'] == cancer_type, 'sample'].nunique()
+                if 'sample' in df_per_sample.columns else 0
+            )
+            if cancer_sample_count > 10:
+                fig_per_method = create_hard_samples_summary_plot(df_per_sample, cancer_type)
+                section_title = 'Hardest Samples — which samples are hard for all tools?'
+                section_desc = (
+                    f'With {cancer_sample_count} samples per condition, an individual per-sample plot is '
+                    'too crowded to read. Left: the samples with the highest mean TAE across all tools '
+                    '(TAE measures how much of the correct signal was misattributed — a more direct '
+                    '"how wrong" measure than F1). Right: the same samples\' difficulty plotted against '
+                    'ENP (Effective Number of Parties) — the spectral flatness of the most diffuse known '
+                    'signature active in that sample. A positive trend suggests these samples are hard '
+                    'because their dominant signature has a diffuse, easily-confused spectrum, not just bad luck.'
+                )
+                div_id = f'hard_samples_{tab_id}'
+            else:
+                fig_per_method = create_per_method_sample_plots(df_per_sample, cancer_type, tools, colors)
+                section_title = 'Sample-by-Sample Comparison — which samples are hard for all tools?'
+                section_desc = (
+                    'Each column is one simulated sample. Grey boxplot = spread of all tools on that '
+                    'sample; colored markers = individual tool results. Samples where the boxplot is low '
+                    'or tools spread far apart are the hardest cases. Use the dropdown to switch mutation burden.'
+                )
+                div_id = f'per_method_{tab_id}'
+
             if fig_per_method is not None:
                 html += '<div style="margin: 2rem 0; padding: 1.5rem; background: #f8f9fa; border-left: 4px solid #059669; border-radius: 4px;">\n'
-                html += '<h4 style="margin-top: 0; color: #059669;">Sample-by-Sample Comparison — which samples are hard for all tools?</h4>\n'
-                html += '<p style="color: #666; margin-bottom: 1rem;">Each column is one simulated sample. Grey boxplot = spread of all tools on that sample; colored markers = individual tool results. Samples where the boxplot is low or tools spread far apart are the hardest cases. Use the dropdown to switch mutation burden.</p>\n'
-                
+                html += f'<h4 style="margin-top: 0; color: #059669;">{section_title}</h4>\n'
+                html += f'<p style="color: #666; margin-bottom: 1rem;">{section_desc}</p>\n'
+
                 # Render the figure HTML with built-in dropdown (no custom controls needed)
-                fig_html = fig_per_method.to_html(include_plotlyjs=False, full_html=False, div_id=f'per_method_{tab_id}', config={'responsive': True})
+                fig_html = fig_per_method.to_html(include_plotlyjs=False, full_html=False, div_id=div_id, config={'responsive': True})
 
                 # Simple layout without custom controls (dropdown is built into the plot)
                 html += '<div class="plot-container">\n'
@@ -4069,8 +5058,10 @@ def create_visualizations_section(df, df_per_sample=None, df_bootstrap=None, df_
                 html += '</div>\n'
                 html += '</div>\n\n'
         
-        # SECTION 4: Interactive Feature vs Metric Analysis
-        if df_per_sample is not None:
+        # SECTION 4: Interactive Feature vs Metric Analysis (only meaningful when the
+        # simulation actually includes unknown-signature mutations — highest_ENP_unknown
+        # is otherwise always zero/absent, since there's nothing unknown to measure)
+        if df_per_sample is not None and has_unknown_signal:
             html += '<div style="margin: 2rem 0; padding: 1.5rem; background: #f8f9fa; border-left: 4px solid #7c3aed; border-radius: 4px;">\n'
             html += '<h4 style="margin-top: 0; color: #7c3aed;">📊 Does Signature Complexity Affect Tool Performance?</h4>\n'
             html += '<p style="color: #666; margin-bottom: 1rem;">Some samples are harder than others because their active signatures have a more spread-out (diffuse) mutational spectrum — measured here by ENP (Effective Number of Parties, range 1–96). ENP = 1 means all mutations fall in a single channel; ENP = 96 means they are perfectly uniform across all channels. Filter samples by ENP range or other metrics, then compare how each tool performs on the selected subset.</p>\n'
@@ -4084,33 +5075,16 @@ def create_visualizations_section(df, df_per_sample=None, df_bootstrap=None, df_
             html += '</div>\n'
             html += '</div>\n'
             
-            # Add feature-metric scatter widget
-            from html_templates import create_feature_metric_scatter_widget
-            
-            # Features are now included directly in per_sample_metrics file
-            if results_dir:
-                per_sample_tsv = Path(results_dir) / 'all_per_sample_metrics.tsv'
-            else:
-                per_sample_tsv = Path('all_per_sample_metrics.tsv')
-            
-            # Check if the file has feature columns (check for new names)
-            has_features = False
-            if per_sample_tsv.exists():
-                try:
-                    sample_df = pd.read_csv(per_sample_tsv, sep='\t', nrows=1)
-                    feature_cols = ['highest_ENP_known', 'highest_ENP_unknown']
-                    has_features = any(col in sample_df.columns for col in feature_cols)
-                except:
-                    pass
-            
-            if has_features:
+            # Add feature-metric scatter widget (data/has_features precomputed once above,
+            # since df_per_sample is embedded unfiltered and identical across every tab)
+            if feature_widget_has_features:
                 html += '<div style="margin-top: 1rem;">\n'
-                # Pass the dataframe directly to avoid CORS issues with file:// protocol
                 widget_html = create_feature_metric_scatter_widget(
-                    per_sample_tsv.name,  # Kept for compatibility
-                    per_sample_tsv.name,  # Kept for compatibility
+                    'all_per_sample_metrics.tsv',  # Kept for compatibility
+                    'all_per_sample_metrics.tsv',  # Kept for compatibility
                     widget_id=f'feature_metric_{tab_id}',
-                    data_df=df_per_sample  # Pass actual data to embed in HTML
+                    data_json=feature_widget_data_json,  # Reuse pre-serialized data across tabs
+                    colors=colors  # Reuse the report's canonical tool color mapping
                 )
                 html += widget_html
                 html += '</div>\n'
@@ -4120,7 +5094,21 @@ def create_visualizations_section(df, df_per_sample=None, df_bootstrap=None, df_
                 html += '</div>\n'
             
             html += '</div>\n'  # Close complexity analysis section
-        
+
+        # SECTION 5: Signature Activity per Sample (ground truth vs. predicted)
+        if sig_activity_json is not None:
+            html += '<div style="margin: 2rem 0; padding: 1.5rem; background: #f8f9fa; border-left: 4px solid #0891b2; border-radius: 4px;">\n'
+            html += f'<h4 style="margin-top: 0; color: #0891b2;" id="{tab_id}-signature-activity">🧬 Signature Activity per Sample</h4>\n'
+            html += (
+                '<p style="color:#666; margin-bottom: 1rem;">'
+                'Ground-truth vs. predicted signature activities for one sample at a time '
+                '&mdash; pick a mutation burden and sample below.</p>\n'
+            )
+            html += create_signature_activity_widget(
+                sig_activity_json, cancer_type, widget_id=f'sig_activity_{tab_id}'
+            )
+            html += '</div>\n'  # Close signature activity section
+
         # Bootstrap quality assessment for this cancer type (DISABLED)
         # if df_bootstrap is not None and len(df_bootstrap) > 0:
         #     html += '<h4 style="margin-top: 2rem;">Bootstrap Quality Assessment</h4>\n'
@@ -4160,13 +5148,13 @@ def create_visualizations_section(df, df_per_sample=None, df_bootstrap=None, df_
                                'num_FP_sigs', 'num_FP_sigs_std', 
                                'num_FN_sigs', 'num_FN_sigs_std', 'num_samples']
     
-    fig_agg_metrics = create_metrics_grid(agg_metrics_df, 'All Cancer Types (Pooled)', tools, colors, df_per_sample)
+    fig_agg_metrics = create_metrics_grid(agg_metrics_df, 'All Cancer Types (Pooled)', tools, colors, df_per_sample, pooled=True)
     html += '<div class="plot-container">\n'
     html += fig_agg_metrics.to_html(include_plotlyjs=False, div_id='aggregate_metrics_grid', config={'responsive': True})
     html += '</div>\n'
     
     html += '</div>\n'
-    
+
     # Bootstrap Quality Assessment tab (if data available)
     if df_bootstrap is not None and len(df_bootstrap) > 0:
         html += '<div id="bootstrap-tab" class="tab-content">\n'
@@ -4224,7 +5212,7 @@ def create_visualizations_section(df, df_per_sample=None, df_bootstrap=None, df_
 # Main Report Generator
 # ============================================================================
 
-def generate_report(df, output_file, title, subtitle, df_per_sample=None, df_bootstrap=None, df_raw=None, results_dir=None, standard_penalties=None, unknown_sig_config=None, cosmic_version_label=None):
+def generate_report(df, output_file, title, subtitle, df_per_sample=None, df_bootstrap=None, df_raw=None, results_dir=None, standard_penalties=None, unknown_sig_config=None, cosmic_version_label=None, out_of_reference_sigs=None, relevance='standard'):
     """
     Generate complete HTML report.
 
@@ -4241,18 +5229,24 @@ def generate_report(df, output_file, title, subtitle, df_per_sample=None, df_boo
         unknown_sig_config: Optional dict with unknown signature configuration {'num_unknowns': int, 'weights': list}
         cosmic_version_label: Optional human-readable COSMIC catalog label derived from
                           config's cosmic_signatures.base_file
+        out_of_reference_sigs: Optional list of signature names simulated but excluded from the
+                          fitting catalog, used to label truth signatures as reference vs. unknown
+                          in the Signature Activity widget
+        relevance: Relevance mode subdirectory name used under results_dir/synthetic/{cancer}/{relevance}/...
     """
     print("\nGenerating report sections...")
 
     # Generate all sections
-    summary_html = create_summary_section(df, df_raw, unknown_sig_config)
-    experiment_html = create_experiment_section(df, df_raw, unknown_sig_config, cosmic_version_label)
+    intro_html = create_report_intro(df, unknown_sig_config)
+    appendix_html = create_appendix_section(df, df_raw, unknown_sig_config, cosmic_version_label)
 
     # Build visualizations section — one sub-section per data_type when multiple exist
     data_types = sorted(df['data_type'].unique()) if 'data_type' in df.columns else ['synthetic']
     if len(data_types) <= 1:
         visualizations_html = create_visualizations_section(
-            df, df_per_sample, df_bootstrap, df_raw, results_dir
+            df, df_per_sample, df_bootstrap, df_raw, results_dir,
+            out_of_reference_sigs=out_of_reference_sigs, relevance=relevance,
+            unknown_sig_config=unknown_sig_config
         )
     else:
         # Toggle buttons
@@ -4296,6 +5290,9 @@ def generate_report(df, output_file, title, subtitle, df_per_sample=None, df_boo
                 dt_df, dt_per_sample, df_bootstrap, df_raw, results_dir,
                 id_prefix=f'{dt}_',
                 include_plotly_cdn=(dt_idx == 0),
+                out_of_reference_sigs=out_of_reference_sigs,
+                relevance=relevance,
+                unknown_sig_config=unknown_sig_config,
             )
             # Remove opening <section ...> and closing </section> tags so they don't nest
             inner = inner.replace('<section id="visualizations" class="section">\n', '', 1)
@@ -4308,7 +5305,7 @@ def generate_report(df, output_file, title, subtitle, df_per_sample=None, df_boo
         vis_html += '</section>\n'
         visualizations_html = vis_html
 
-    content = summary_html + experiment_html + visualizations_html
+    content = intro_html + visualizations_html + appendix_html
     
     # Fill template
     timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
@@ -4342,6 +5339,8 @@ def main(summaries, per_sample, bootstrap_quality, output, title, subtitle,
     standard_penalties = {}
     unknown_sig_config = None
     cosmic_version_label = None
+    out_of_reference_sigs = []
+    relevance = 'standard'
 
     if config_file:
         print(f"Attempting to load config file: {config_file}")
@@ -4356,6 +5355,8 @@ def main(summaries, per_sample, bootstrap_quality, output, title, subtitle,
                 cosmic_version_label = _derive_cosmic_label(
                     config_data.get('cosmic_signatures', {}).get('base_file')
                 )
+                out_of_reference_sigs = config_data.get('out_of_reference_sigs', []) or []
+                relevance = (config_data.get('relevance_modes') or ['standard'])[0]
                 out_of_ref_weights = config_data.get('out_of_reference_weights', [])
                 if out_of_ref_weights:
                     unknown_sig_config = {
@@ -4443,7 +5444,7 @@ def main(summaries, per_sample, bootstrap_quality, output, title, subtitle,
         print(f"\nLoading bootstrap quality assessment from {len(bootstrap_quality)} file(s)...")
         df_bootstrap = load_evaluation_data(bootstrap_quality)
 
-    generate_report(df, output, title, subtitle, df_per_sample, df_bootstrap, df_raw, results_dir, standard_penalties, unknown_sig_config, cosmic_version_label)
+    generate_report(df, output, title, subtitle, df_per_sample, df_bootstrap, df_raw, results_dir, standard_penalties, unknown_sig_config, cosmic_version_label, out_of_reference_sigs, relevance)
 
 
 if 'snakemake' in dir():
@@ -4469,7 +5470,7 @@ elif __name__ == '__main__':
     parser.add_argument('--per-sample', nargs='+')
     parser.add_argument('--bootstrap-quality', nargs='+')
     parser.add_argument('--output', required=True)
-    parser.add_argument('--title', default='SigFitTest Benchmark Report')
+    parser.add_argument('--title', default='SigFitBench Benchmark Report')
     parser.add_argument('--subtitle', default='Mutational Signature Fitting Tool Comparison')
     parser.add_argument('--results-dir')
     parser.add_argument('--config')

@@ -46,7 +46,7 @@ def load_tool_results(results_file):
         elif df.columns[0] == '0' or (len(df) > 0 and str(df.iloc[0, 0]).startswith('SBS')):
             df = df.set_index(df.columns[0], drop=True)
         return df
-    except:
+    except Exception:
         try:
             df = pd.read_csv(results_file, sep='\t', index_col=0)
             return df
@@ -60,7 +60,7 @@ def load_catalog(catalog_file):
     try:
         df = pd.read_csv(catalog_file, sep='\t', index_col=0)
         return df
-    except:
+    except Exception:
         try:
             df = pd.read_csv(catalog_file, sep=',', index_col=0)
             return df
@@ -74,7 +74,7 @@ def load_reference_signatures(ref_file):
     try:
         df = pd.read_csv(ref_file, sep='\t', index_col='Type')
         return df
-    except:
+    except Exception:
         try:
             df = pd.read_csv(ref_file, sep=',')
             if 'Type' in df.columns:

@@ -17,7 +17,7 @@ num_muts: [250, 500, 1000, 2000, 5000, 10000, 50000, 100000]   # mutations per s
 
 # Available WGS cancer types: Breast, CNS-GBM, ColoRect-AdenoCA, Eso-AdenoCA, Head-SCC,
 #   Liver-HCC, Lung-AdenoCA, Lymph-BNHL, Ovary-AdenoCA, Panc-AdenoCA, Skin-Melanoma, Stomach-AdenoCA
-cancer_types: ["Breast", "Ovary-AdenoCA", "Lung-AdenoCA", "ColoRect-AdenoCA", "Head-SCC", "Skin-Melanoma"]
+cancer_types: ["Head-SCC", "Breast", "Ovary-AdenoCA", "Lung-AdenoCA", "ColoRect-AdenoCA",  "Skin-Melanoma"]
 
 num_samples: 100
 num_realizations: 1
@@ -78,7 +78,7 @@ evaluation:
   num_bootstrap: 1                # 50 testing / 100 standard / 1000 publication
 
 # ============================================================================
-# TOOL OVERRIDES
+# nparallel
 # ============================================================================
 
 tool_overrides:
@@ -97,10 +97,16 @@ tool_overrides:
     max_iter: 1000
     prune_signatures_flag: true
   sigid:
-    thresh_backward: 0.001
+    thresh_backward: 0.01
     max_iter: 1000
-    min_penalty: 0.00001
-    max_penalty: 1000
+    min_penalty: 0.01
+    max_penalty: 100
+    initial_remove_penalty: 0.05
+  signature_tools:
+    method: "KLD"  # options: "KLD" (default, multiplicative NMF update via NNLM), "NNLS" (non-negative least squares)
+    exposureFilterType: "giniScaledThreshold"  # options: "giniScaledThreshold" (default), "fixedThreshold"
+    nboot: 100  # number of bootstrap resamples used to filter low-confidence exposures
+    nparallel: 4  # cores for bootstrap parallelization; also sets this rule's Snakemake `threads`
 
 # ============================================================================
 # TOOL FORMAT CONFIGURATIONS

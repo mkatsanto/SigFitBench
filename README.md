@@ -1,8 +1,10 @@
-# SigFitTest Workflow
+# SigFitBench
 
 [![Snakemake](https://img.shields.io/badge/snakemake-≥7.0-brightgreen.svg)](https://snakemake.github.io)
 
-A Snakemake-based workflow for comprehensive benchmarking and evaluation of mutational signature fitting tools — synthetic and real data, a dozen third-party tools, and two in-house methods aimed at the unknown-signature problem, all evaluated side by side.
+A Snakemake workflow for benchmarking mutational signature fitting tools. It runs a dozen third-party
+tools alongside two purpose-built methods for the unknown-signature problem — `SigID` and `SigTrim` —
+against synthetic and real mutation catalogs, and evaluates them all side by side.
 
 ## Introduction
 
@@ -26,7 +28,7 @@ This workflow implements the **SigFitTest** methodology ([Medo et al., 2024, *Na
 4. **Identifies best tools** for different scenarios (mutation counts, cancer types, signature sets)
 5. **Tests robustness** when some signatures are unknown to tools
 
-**Original Repository**: [SigFitTest](https://github.com/8medom/SigFitTest)
+**Methodology paper's original repository**: [SigFitTest](https://github.com/8medom/SigFitTest)
 
 ---
 
@@ -69,14 +71,14 @@ Restart terminal after installation.
 ### 2. Create Environment
 
 ```bash
-git clone https://github.com/mkatsanto/sigfittest_workflow.git
-cd sigfittest_workflow
+git clone https://github.com/mkatsanto/SigFitBench.git
+cd SigFitBench
 
 # Create base environment (10-20 min)
 conda env create -f install/environment.yml
 
 # Activate
-conda activate sigfittest
+conda activate sigfitbench
 ```
 
 Tool-specific conda environments are created automatically on first run via the `--use-conda` flag.
@@ -90,8 +92,8 @@ Tool-specific conda environments are created automatically on first run via the 
 **Option A — plain flags:**
 
 ```bash
-conda activate sigfittest
-cd sigfittest_workflow
+conda activate sigfitbench
+cd SigFitBench
 
 # Run with a specific config file
 snakemake --snakefile workflow/Snakefile --configfile config/config_test.yaml \
@@ -113,8 +115,8 @@ Replace `config_test.yaml` with any config from the `config/` directory (see [Co
 `cores: 3`) into a single reusable profile, so you don't have to repeat them every time:
 
 ```bash
-conda activate sigfittest
-cd sigfittest_workflow
+conda activate sigfitbench
+cd SigFitBench
 
 snakemake --profile profiles/local-conda \
   --snakefile workflow/Snakefile --configfile config/config_test.yaml
@@ -133,8 +135,8 @@ and already sets `use-conda: true` and `rerun-incomplete: true`, so those flags 
 repeated on the command line.
 
 ```bash
-conda activate sigfittest
-cd sigfittest_workflow
+conda activate sigfitbench
+cd SigFitBench
 
 snakemake --profile profiles/slurm-conda \
   --snakefile workflow/Snakefile --configfile config/config_test.yaml
@@ -222,6 +224,12 @@ in each tool's `{tool}_contribution.dat` output filename:
 [Method Descriptions](#method-descriptions)); the rest are established third-party tools. Neither
 sweeps a penalty grid — both always emit a single `{tool}_contribution.dat` per condition.
 
+> **Known limitation on Apple Silicon**: `mmsig` and `sigfit` currently don't have a working conda
+> environment on `osx-arm64`. `mmsig` hard-depends on the ~800 MB `BSgenome.Hsapiens.UCSC.hg19` genome
+> data package plus `MutationalPatterns`/`deconstructSigs` transitively; `sigfit` requires compiling a
+> full Stan (`rstan`/`StanHeaders`) toolchain from source, which is slow and fragile on this platform.
+> Both install cleanly on Linux, where bioconda ships native builds for all of their dependencies.
+
 Add per-tool overrides (thresholds, penalties, `metric: cosine`/`l2`, etc.) under `tool_overrides` —
 see the blocks already in `config_unknown_0.yaml` for every tool's available knobs.
 
@@ -267,17 +275,13 @@ custom_datasets:
 ## Method Descriptions
 
 Every fitting tool answers the same question — *which COSMIC signatures explain this
-sample's mutation catalog, and how much does each contribute?* This workflow's own
-methods (`workflow/scripts/`) go one step further and also try to answer *what if the
-sample contains a signature that isn't in the reference at all?* That's the
-**unknown-signature problem**, and it's the reason these custom methods exist alongside
-the third-party tools above.
-
-Two general approaches tackle it, described below at the level of "how it works" rather
-than a fixed recipe — the codebase currently carries several experimental variants of
-each (different metrics, protection rules, penalty-selection strategies) while the best
-configuration is still being benchmarked. Once that settles, the two winning versions
-will replace this placeholder with full step-by-step writeups.
+sample's mutation catalog, and how much does each contribute?* `SigID` and `SigTrim`
+— this workflow's own methods, packaged separately at
+[github.com/mkatsanto/SigID](https://github.com/mkatsanto/SigID) and
+[github.com/mkatsanto/SigTrim](https://github.com/mkatsanto/SigTrim) — go one step
+further and also try to answer *what if the sample contains a signature that isn't in
+the reference at all?* That's the **unknown-signature problem**, and it's the reason
+these methods exist alongside the third-party tools above.
 
 ### What is LOO (Leave-One-Out)?
 
@@ -303,7 +307,7 @@ Metrics used:
 
 ### SPA (`cosmic_fit`) — Reference Algorithm
 
-**No unknowns.** The reference against which all extended methods are compared.
+**No unknowns.** The reference against which `SigID` and `SigTrim` are benchmarked.
 
 1. **NNLS on all signatures** → sparse active set (typically 10–20 non-zero weights). This is the starting point — not all 78.
 2. **Initial backward elimination** (`initial_remove_penalty = 0.05`): LOO cosine loop on the NNLS-sparse set. Remove the sig with the smallest LOO drop if drop < 0.05. Repeat until convergence.
@@ -318,54 +322,51 @@ Metrics used:
 
 ---
 
-### `iterative` — lightweight pruning approach
+### SigTrim — unassigned-mutation trimming
 
-**Objective**: standard NNLS, no unknown-signature penalty.
+**Objective**: standard NNLS, but with out-of-reference signal trimmed out first rather than modelled.
 
 **Steps:**
 
-1. **Channel-level pruning** (z-score based, `zscore_threshold`): fit NNLS, compute per-channel residual, and drop channels whose residual z-score exceeds the threshold — they likely carry out-of-reference signal that would distort the known-signature fit. Repeat until no anomalous channels remain.
-2. **Backward elimination** (`thresh_backward`): LOO loop on the pruned channel set until convergence.
-3. **Final NNLS** on surviving signatures over the original channels.
+1. **Z-score channel trimming**: fit NNLS, compute each channel's unassigned residual, and
+   trim the excess from any channel whose residual z-score exceeds `zscore_threshold` —
+   these channels likely carry out-of-reference signal that would distort the
+   known-signature fit. Refit and repeat until no anomalous channels remain.
+2. **Coarse pre-filter** (`initial_remove_penalty`): a backward-elimination pass on the
+   trimmed counts before the main loop.
+3. **SPA-style greedy add/remove loop** (`thresh_forward` / `thresh_backward`, L2
+   distance): layer by layer, add whichever candidate known signature helps most, then
+   prune whichever hurts least, until no improving move remains.
+4. **Background-signature protection**: SBS1/SBS5 (configurable) are never removed.
+5. **Final NNLS fit** on the surviving signature set over the (trimmed) counts.
 
-No SBS1/SBS5 protection, no add step, no explicit unknown-signature output — it simply
-keeps unexplained signal from distorting the known-signature fit rather than modelling
-it directly. `iterative_version1` is identical except it uses **L2 distance** instead of
-cosine for the backward-elimination step.
+SigTrim doesn't emit an explicit "unknown signature" — it keeps unexplained signal from
+distorting the known-signature fit by trimming it out rather than modelling it directly.
 
 ---
 
-### `extended` — residual-driven unknown detection
+### SigID — automatic per-sample unknown discovery
 
-**Objective**: `min_{h≥0} 0.5·‖Wh−x‖² + λ·Σ|h_k|` (k ∈ unknown sigs), minimised with SLSQP.
+**Objective**: known-signature fit via the same SPA-style greedy add/remove logic as
+SigTrim, plus an L1-penalised fit that lets one or more discovered "unknown" signatures
+join the active set when they genuinely improve reconstruction.
 
 **Steps:**
 
-1. **Backward elimination** on known signatures (LOO, cosine or L2 depending on variant).
-2. **Unknown spike construction**: take the NNLS residual, find the channels with the
-   largest unexplained signal, and build one identity "spike" signature per channel.
-3. **Combine spikes** into a single unknown profile via SLSQP-weighted averaging.
-4. **Second backward elimination** on known signatures + the combined unknown.
-5. **Final SLSQP with an L1 penalty** on the unknown weight, so it only survives in the
-   fit if it earns its place.
-
-This is the family under active development. The codebase currently has several
-experimental variants exploring: different LOO metrics (cosine vs. L2), SBS1/SBS5 and
-connected-family protection, greedy add/remove search instead of pure pruning, automatic
-vs. swept penalty selection, and bias corrections (e.g. a `dummy_sig_multiplier`) for the
-unfair LOO advantage unknown signatures get from being built directly out of the
-residual. Two of these variants will be promoted here with full writeups once
-benchmarking confirms which perform best.
+1. **Greedy known-signature selection**: the same layered add/backward-eliminate loop as SigTrim, run on the known (COSMIC) signature set.
+2. **Unknown-signature discovery**: an L1-penalised fit that lets candidate unknown signatures enter the active set alongside the known ones.
+3. **Per-sample penalty selection**: rather than one fixed L1 penalty applied to every sample — too weak and noise gets mistaken for a novel signature, too strong and genuine novel signal is suppressed — SigID sweeps a grid of penalty values (`min_penalty`–`max_penalty`) and picks the *knee* of the reconstruction-error-vs-penalty curve (the point of maximum curvature, via a robustly-fit sigmoid), falling back to a threshold rule if the curve can't be fit reliably. Each sample gets its own data-driven cutoff instead of a single global guess.
+4. **Final output**: known + discovered-unknown signature weights at that sample's selected penalty.
 
 ---
 
 ### At a Glance
 
-| Method | Unknowns modelled | Status |
+| Method | Unknowns modelled | Approach |
 |---|---|---|
-| SPA | ✗ | Reference algorithm — all custom methods are benchmarked against it |
-| `iterative` (+ `_version1`) | ✗ | Stable — channel pruning + backward elimination (cosine / L2) |
-| `extended` | ✓ (L1 penalty) | Under active development — several variants in evaluation |
+| SPA | ✗ | Reference algorithm — SigID and SigTrim are benchmarked against it |
+| SigTrim | ✗ (trimmed, not modelled) | Z-score channel trimming + SPA-style greedy add/remove |
+| SigID | ✓ (L1 penalty) | SPA-style greedy add/remove + per-sample auto-selected L1 penalty for unknown discovery |
 
 ---
 
@@ -390,7 +391,7 @@ benchmarking confirms which perform best.
 │
 ├── all_evaluation_metrics.tsv              # Aggregated metrics across all tools and conditions
 ├── all_per_sample_metrics.tsv             # Per-sample metrics with features
-├── sigfittest_report.html                 # Interactive HTML report (main output)
+├── sigfitbench_report.html                # Interactive HTML report (main output)
 ├── penalty_analysis_report.html           # TAE vs penalty sweep report
 └── workflow_complete.txt                  # Written when workflow finishes successfully
 ```
@@ -410,8 +411,8 @@ benchmarking confirms which perform best.
 Open the report in a browser after the workflow completes:
 
 ```bash
-open {output_dir}/sigfittest_report.html        # macOS
-xdg-open {output_dir}/sigfittest_report.html    # Linux
+open {output_dir}/sigfitbench_report.html        # macOS
+xdg-open {output_dir}/sigfitbench_report.html    # Linux
 ```
 
 The report contains:
@@ -534,7 +535,7 @@ ls cosmic_tissue_data/signature_contributions_WGS_*.dat
 
 ### Getting Help
 
-- **Issues**: [GitHub Issues](https://github.com/mkatsanto/sigfittest_workflow/issues)
+- **Issues**: [GitHub Issues](https://github.com/mkatsanto/SigFitBench/issues)
 - **Original Paper**: [Medo et al., 2024](https://doi.org/10.1038/s41467-024-53711-6)
 
 ---
@@ -586,7 +587,7 @@ This workflow benchmarks the following tools — please also cite whichever ones
 | `sigspack` | Schumann, F., Blanc, E., Messerschmidt, C. et al. SigsPack, a package for cancer mutational signatures. *BMC Bioinformatics* 20, 450 (2019). [doi:10.1186/s12859-019-3043-7](https://doi.org/10.1186/s12859-019-3043-7) |
 | `yapsa` | Hübschmann, D., Jopp-Saile, L. et al. Analysis of mutational signatures with yet another package for signature analysis. *Genes Chromosomes Cancer* 60, 314–331 (2021). [doi:10.1002/gcc.22918](https://doi.org/10.1002/gcc.22918) |
 
-The `iterative`/`iterative_version1` and `extended` methods are original to this workflow (see [Method Descriptions](#method-descriptions)) and don't need a separate citation beyond the SigFitTest paper above.
+`SigID` and `SigTrim` are original to this workflow (see [Method Descriptions](#method-descriptions)) and don't need a separate citation beyond the SigFitTest paper above.
 
 ---
 

@@ -1,5 +1,5 @@
 snakefile: "../../workflow/Snakefile"
-cores: 3
+cores: 12
 printshellcmds: true
 rerun-incomplete: true
 use-conda: true

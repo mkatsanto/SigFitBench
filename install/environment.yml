@@ -1,4 +1,4 @@
-name: sigfittest
+name: sigfitbench
 channels:
   - conda-forge
   - bioconda

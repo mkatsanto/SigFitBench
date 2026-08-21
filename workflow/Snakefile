@@ -178,4 +178,4 @@ rule all:
         # Bootstrap quality assessment (optional)
         bootstrap_quality = os.path.join(config['output_dir'], "all_bootstrap_quality.tsv") if config.get("evaluation", {}).get("run_bootstrap_quality", False) else [],
         # HTML report (MultiQC-style) - contains all visualizations
-        html_report=os.path.join(config['output_dir'], "sigfittest_report.html")
+        html_report=os.path.join(config['output_dir'], "sigfitbench_report.html")

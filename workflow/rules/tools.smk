@@ -317,24 +317,19 @@ rule signature_tools:
         )
     conda:
         os.path.join(workflow.basedir, "envs", "signature_tools.yaml")
-    threads: 1
+    threads: lambda wildcards: get_tool_config("signature_tools").get("nparallel", 1)
     resources:
         mem_mb=lambda wildcards, attempt: 4000 * attempt,
     shell:
-        # Invoke this conda env's own Rscript by absolute path ($CONDA_PREFIX,
-        # set directly by conda's activation, not looked up on PATH) rather
-        # than the bare "Rscript" a plain script: directive would generate --
-        # a polluted PATH (another auto-activated env, a system R shadowing
-        # this one) can otherwise make "Rscript" silently resolve to the
-        # wrong interpreter entirely, as happened repeatedly before this.
         """
-        "$CONDA_PREFIX/bin/Rscript" --vanilla "{input.script}" \
+        Rscript --vanilla "{input.script}" \
             --data "{input.data}" \
             --cosmic "{input.cosmic}" \
             --output "{output.result}" \
             --method "{params.method}" \
             --filter-type "{params.exposureFilterType}" \
             --nboot {params.nboot} \
+            --nparallel {threads} \
             > {log.stdout} 2> {log.stderr}
         """
 
@@ -605,13 +600,13 @@ rule sigtrim:
     """
     SigTrim: iterative z-score based unassigned-mutation trimming, followed by an
     SPA-style coarse pre-filter and greedy add/remove of known signatures.
-    (packaged separately at github.com/mkatsanto/SigTrim; script here for the benchmark)
+    Runs the installed package (github.com/mkatsanto/SigTrim, pip-installed into
+    sigtrim.yaml) via its `sigtrim` CLI entry point.
     """
     input:
         data=lambda wildcards: get_input_data('sigtrim', wildcards),
         weights=lambda wildcards: get_cosmic_signatures("sigtrim", wildcards.relevance),
         matrix_order=config["matrix_order"],
-        script=os.path.join(workflow.basedir, "scripts", "iterative_version3.py")
     output:
         result=os.path.join(
             config['output_dir'],
@@ -653,7 +648,7 @@ rule sigtrim:
     resources:
         mem_mb=lambda wildcards, attempt: 4000 * attempt,
     shell:
-        "(python '{input.script}'  \
+        "(sigtrim \
         -i {input.data} \
         -w {input.weights} \
         -m {input.matrix_order} \
@@ -670,7 +665,8 @@ rule sigid:
     SigID: SPA-style greedy add/remove of known signatures with automatic per-sample
     L1 penalty selection for unknown-signature discovery. Produces a single
     contribution file (no penalty sweep required).
-    (packaged separately at github.com/mkatsanto/SigID; script here for the benchmark)
+    Runs the installed package (github.com/mkatsanto/SigID, pip-installed into
+    sigid.yaml) via its `sigid` CLI entry point.
     """
     input:
         data=lambda wildcards: get_input_data('sigid', wildcards),
@@ -680,7 +676,6 @@ rule sigid:
             config['output_dir'], "generated_data", wildcards.data_type,
             f"weights_{wildcards.cancer_type}-w_{'0' if wildcards.data_type == 'realsim' else wildcards.rep}-{wildcards.num_muts}.dat"
         ),
-        script=os.path.join(workflow.basedir, "scripts", "extended_removal_addition.py")
     output:
         result=os.path.join(
             config['output_dir'],
@@ -722,15 +717,15 @@ rule sigid:
     resources:
         mem_mb=lambda wildcards, attempt: 4000 * attempt,
     shell:
-        "(python '{input.script}' \
+        "(sigid \
         -i {input.data} \
         -w {input.weights} \
         -m {input.matrix_order} \
         -o {output.result} \
-        --auto-penalty \
         --thresh-backward {params.thresh_backward} \
         --max-iter {params.max_iter} \
         --min-penalty {params.min_penalty} \
         --max-penalty {params.max_penalty} \
         --initial-remove-penalty {params.initial_remove_penalty} \
-        --true-weights {input.true_weights}) > {log.stdout} 2> {log.stderr}"
+        --true-weights {input.true_weights} \
+        --n-jobs {threads}) > {log.stdout} 2> {log.stderr}"
