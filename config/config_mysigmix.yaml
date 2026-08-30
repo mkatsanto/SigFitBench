@@ -1,59 +1,75 @@
 # ============================================================================
 # SigFitTest Workflow Configuration — config_mysigmix.yaml
-# Based on config_test.yaml, with a MySigMix custom dataset using config10.tsv
-# as the signature combinations file. See README.md for full documentation.
+# Example "custom" + "synthetic" run: a MySigMix custom dataset drawing from
+# config10.tsv as the signature combinations file, alongside a small standard
+# synthetic run. See README.md for full documentation.
 # ============================================================================
 
 # ============================================================================
-# CORE SETTINGS
+# CORE SETTINGS — always required, regardless of data source
 # ============================================================================
 
 tools_to_run: [ "SPA", "SPA_low", "MuSiCal", "FSPA"]
 
-num_muts: [200] #, 400, 800, 1600, 3200, 6400, 12800, 50000, 100000, 200000, 500000, 1000000]   # mutations per sample
+data_types: ["custom", "synthetic"]      # which DATA SOURCE section(s) below are active:
+                                          # "synthetic", "realsim", "external", "custom"
+                                          # (combine more than one to run several in one config,
+                                          # as this file does)
+
+relevance_modes: ["standard"]            # "standard", "relevant", or both
+
+output_dir: "results_test"
+log_dir: "logs_test"
+random_seed: 0
+
+# ============================================================================
+# DATA SOURCE 1/4 — "synthetic": simulate samples from empirical COSMIC tissue
+# distributions, with known ground truth. Active (data_types above includes it).
+# num_muts/num_samples/num_realizations/out_of_reference_* below are also read
+# by "custom" (DATA SOURCE 4/4) — both data sources share these top-level keys.
+# ============================================================================
 
 # Available WGS cancer types: Breast, CNS-GBM, ColoRect-AdenoCA, Eso-AdenoCA, Head-SCC,
 #   Liver-HCC, Lung-AdenoCA, Lymph-BNHL, Ovary-AdenoCA, Panc-AdenoCA, Skin-Melanoma, Stomach-AdenoCA
 cancer_types: ["Breast", "Ovary-AdenoCA", "Panc-AdenoCA", "Skin-Melanoma", "Lung-AdenoCA", "Head-SCC"]
 
+num_muts: [200] #, 400, 800, 1600, 3200, 6400, 12800, 50000, 100000, 200000, 500000, 1000000]   # mutations per sample
 num_samples: 2
 num_realizations: 1
-
-data_types: ["custom", "synthetic"]      # "synthetic", "realsim", "external", "custom"
-relevance_modes: ["standard"]            # "standard", "relevant", or both
 
 # Unknown signatures: excluded from the fitting reference, included in simulation
 out_of_reference_sigs: ["SBS10c", "SBS10d", "SBS86", "SBS87", "SBS88", "SBS89", "SBS90", "SBS91", "SBS92", "SBS93", "SBS94", "SBS95"]
 out_of_reference_weights: [0]          # fraction of mutations from unknown sigs
 
-random_seed: 0
-
 # ============================================================================
-# DIRECTORIES
-# ============================================================================
-
-input_dir: "input"
-output_dir: "results_test"
-log_dir: "logs_test"
-signature_contributions_dir: "cosmic_tissue_data"
-
-# ============================================================================
-# COSMIC SIGNATURES
+# DATA SOURCE 2/4 — "realsim": real PCAWG samples, split per tissue, at their
+# native mutation count (no downsampling, no ground truth — evaluated via
+# cross-tool agreement). Inactive here (not in data_types above).
 # ============================================================================
 
-cosmic_signatures:
-  base_file: "input/COSMIC_v3.3.1_SBS_GRCh38.txt"
+# simulation:
+#   real_samples:
+#     input_real_catalog: "real_mutational_catalogs/real_samples_WGS_PCAWG-146_input_profiles.dat"
+#     cancer_types: ["Breast-AdenoCA", "Skin-Melanoma"]
+#     # Available in that file: Biliary-AdenoCA, Bladder-TCC, Breast-AdenoCA, CNS-GBM,
+#     # ColoRect-AdenoCA, Eso-AdenoCA, Head-SCC, Liver-HCC, Lung-AdenoCA, Lung-SCC,
+#     # Lymph-BNHL, Panc-AdenoCA, Skin-Melanoma, Stomach-AdenoCA, Uterus-AdenoCA
 
 # ============================================================================
-# SYSTEM PARAMETERS
+# DATA SOURCE 3/4 — "external": bring your own real catalog, all samples
+# fit as one flat dataset (no per-tissue splitting like realsim — use that
+# instead if you want the split). No ground truth, cross-tool agreement only.
+# Inactive here (not in data_types above).
 # ============================================================================
 
-epsilon: 0.00000001
-wgs_or_wes: "WGS"
-matrix_order: "input/mut_matrix_order_MutationalPatterns.dat"
+# external_datasets:
+#   MyDataset:
+#     catalog: "input/my_catalog.dat"   # contexts x samples TSV/CSV; column headers become sample names verbatim
 
 # ============================================================================
-# CUSTOM SIGNATURE MIX (data_types: ["custom"])
+# DATA SOURCE 4/4 — "custom": fully synthetic, drawn from your own precalculated
+# table of signature-weight combinations (real ground truth, same evaluation
+# path as "synthetic"). Active (data_types above includes it).
 # ============================================================================
 # Each dataset needs a 'combinations_file' (TSV: rows=combinations, cols=signatures);
 # each sample randomly draws one row. See README.md "Data Types" for the file format.
@@ -63,33 +79,21 @@ custom_datasets:
     combinations_file: "input/mysigmix/config10.tsv"
 
 # ============================================================================
-# OTHER SIMULATION MODES (data_types: ["realsim"] / ["external"])
+# BOILERPLATE — required by the Snakefile regardless of which data source(s)
+# above are active (every rule for every data source gets parsed on every run)
 # ============================================================================
-# realsim: real PCAWG samples for the selected cancer types, at their native mutation
-# count (no downsampling, no ground truth). Uses its own cancer_types list below.
 
-# Available cancer types in real_samples_WGS_PCAWG-146_input_profiles.dat:
-#   Biliary-AdenoCA, Bladder-TCC, Breast-AdenoCA, CNS-GBM, ColoRect-AdenoCA,
-#   Eso-AdenoCA, Head-SCC, Liver-HCC, Lung-AdenoCA, Lung-SCC, Lymph-BNHL,
-#   Panc-AdenoCA, Skin-Melanoma, Stomach-AdenoCA, Uterus-AdenoCA
+input_dir: "input"
+signature_contributions_dir: "cosmic_tissue_data"
 
-# data_types: ["realsim"]
-# simulation:
-#   real_samples:
-#     input_real_catalog: "real_mutational_catalogs/real_samples_WGS_PCAWG-146_input_profiles.dat"
-#     cancer_types: ["Breast-AdenoCA", "Skin-Melanoma"]
+cosmic_signatures:
+  base_file: "input/COSMIC_v3.3.1_SBS_GRCh38.txt"
 
-# external_datasets:
-#   MyDataset:
-#     catalog: "input/my_catalog.dat"
-#     ground_truth: "input/my_weights.dat"
-#     num_muts_label: 50000
+epsilon: 0.00000001
+wgs_or_wes: "WGS"
+matrix_order: "input/mut_matrix_order_MutationalPatterns.dat"
 
-# ============================================================================
-# RELEVANT SIGNATURES (Tissue-Specific Filtering)
-# ============================================================================
 # relevant_signatures: "auto" | [manual signature list] | null (skip relevant mode)
-
 relevant_signatures: null
 
 relevant_detection:
@@ -98,18 +102,10 @@ relevant_detection:
   min_avg_contribution: 50.0
   consensus_tools: 2
 
-# ============================================================================
-# EVALUATION SETTINGS
-# ============================================================================
-
 evaluation:
   min_contribution: 10.0          # min mutations per sample to count a signature "active"
   run_bootstrap_quality: false    # computationally intensive — under development
   num_bootstrap: 1                # 50 testing / 100 standard / 1000 publication
-
-# ============================================================================
-# TOOL OVERRIDES
-# ============================================================================
 
 tool_overrides:
   sigminer:
@@ -134,10 +130,6 @@ tool_overrides:
     min_penalty: 0.00001
     max_penalty: 1000
 
-# ============================================================================
-# TOOL FORMAT CONFIGURATIONS
-# ============================================================================
-
 tool_formats:
   tab_with_index:
     tools: ["deconstructsigs", "spa", "spa_low", "fspa"]
@@ -149,7 +141,7 @@ tool_formats:
     tools: ["mutationalpatterns", "musical", "sigtrim", "sigid"]
     input_data_base: "data/data_for_MutationalPatterns.dat"
     cosmic_signatures:
-      standard: "input/COSMIC_v3_SBS_GRCh38.txt"
+      standard: "{output_dir}/cosmic_signatures/COSMIC_v3_SBS_GRCh38_tab_with_index.txt"
 
   csv_with_index:
     tools: ["sigfit", "mmsig", "sigminer", "sigspack", "yapsa"]

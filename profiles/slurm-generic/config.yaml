@@ -1,0 +1,90 @@
+# Snakemake 8+ profile using the native slurm executor plugin.
+#
+# This is a cluster-agnostic starting point for running SigFitBench on any
+# SLURM cluster: copy this directory, then fill in the three commented-out
+# fields under default-resources for your own allocation. `profiles/slurm-conda`
+# is a worked example of this same profile filled in for UBELIX (University
+# of Bern HPC) — use it as a reference for what real values look like.
+executor: slurm
+jobs: 50
+latency-wait: 60
+printshellcmds: true
+rerun-incomplete: true
+use-conda: true
+restart-times: 1
+keep-going: true
+notemp: false
+no-hooks: true
+verbose: true
+max-jobs-per-second: 10
+max-status-checks-per-second: 10
+
+default-resources:
+  # Uncomment and fill in whichever of these your cluster requires (check
+  # with `sinfo`/`sacctmgr show associations` or your cluster's docs):
+  # slurm_partition: "your_partition"
+  # slurm_account: "your_account"
+  # qos: "your_qos"
+  nodes: 1
+  mem_mb: 1024
+  runtime: 60
+
+# Per-rule runtime overrides (minutes) -- cluster-agnostic, tuned to each
+# rule's typical cost regardless of which SLURM cluster it runs on. Add a
+# `mem_mb:` here too for any rule that needs more/less than the 1024 MB
+# default above.
+set-resources:
+  ms_create_synthetic_catalog:
+    runtime: 15
+  create_realsim_catalog:
+    runtime: 30
+  prepare_external_catalog:
+    runtime: 30
+  create_custom_catalog:
+    runtime: 30
+  cosmic_signatures_by_format:
+    runtime: 15
+  cosmic_signatures_by_format_relevant:
+    runtime: 15
+  identify_active_signatures:
+    runtime: 30
+  fspa:
+    runtime: 120
+  spa:
+    runtime: 120
+  mutationalpatterns:
+    runtime: 60
+  deconstructsigs:
+    runtime: 60
+  mmsig:
+    runtime: 60
+  sigfit:
+    runtime: 120
+  siglasso:
+    runtime: 60
+  sigminer:
+    runtime: 120
+  signature_tools:
+    runtime: 60
+  sigspack:
+    runtime: 60
+  yapsa:
+    runtime: 60
+  musical:
+    runtime: 60
+  sigtrim:
+    runtime: 120
+  sigid:
+    runtime: 360
+  evaluate_tool_performance:
+    runtime: 30
+  assess_fit_quality_bootstrap:
+    runtime: 120
+  evaluate_real_samples:
+    runtime: 30
+  compute_summary_metrics:
+    runtime: 60
+  aggregate_bootstrap_quality:
+    runtime: 30
+  create_html_report:
+    runtime: 30

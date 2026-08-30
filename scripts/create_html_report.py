@@ -2621,8 +2621,10 @@ def create_precision_recall_subplots(df, cancer_type, tools, colors, df_per_samp
         # Add F1 score reference lines to each P-R plot
         for f1_val, f1_label in [(0.5, 'F1=0.5'), (0.7, 'F1=0.7'), (0.9, 'F1=0.9')]:
             recall = np.linspace(0.01, 1, 100)
-            precision = f1_val * recall / (2 * recall - f1_val * recall)
-            precision = np.clip(precision, 0, 1)
+            denom = 2 * recall - f1_val
+            with np.errstate(divide='ignore', invalid='ignore'):
+                precision = np.where(denom > 0, f1_val * recall / denom, np.nan)
+            precision = np.where((precision >= 0) & (precision <= 1), precision, np.nan)
             
             fig.add_trace(go.Scatter(
                 x=recall,
@@ -5212,7 +5214,7 @@ def create_visualizations_section(df, df_per_sample=None, df_bootstrap=None, df_
 # Main Report Generator
 # ============================================================================
 
-def generate_report(df, output_file, title, subtitle, df_per_sample=None, df_bootstrap=None, df_raw=None, results_dir=None, standard_penalties=None, unknown_sig_config=None, cosmic_version_label=None, out_of_reference_sigs=None, relevance='standard'):
+def generate_report(df, output_file, title, subtitle, df_per_sample=None, df_bootstrap=None, df_raw=None, results_dir=None, unknown_sig_config=None, cosmic_version_label=None, out_of_reference_sigs=None, relevance='standard'):
     """
     Generate complete HTML report.
 
@@ -5225,7 +5227,6 @@ def generate_report(df, output_file, title, subtitle, df_per_sample=None, df_boo
         df_bootstrap: Optional pandas.DataFrame with bootstrap quality assessment results
         df_raw: Optional pandas.DataFrame with raw per-realization data for stability plots
         results_dir: Optional base results directory for reading contribution files
-        standard_penalties: Optional dict of standard penalty values per tool
         unknown_sig_config: Optional dict with unknown signature configuration {'num_unknowns': int, 'weights': list}
         cosmic_version_label: Optional human-readable COSMIC catalog label derived from
                           config's cosmic_signatures.base_file
@@ -5335,8 +5336,7 @@ def generate_report(df, output_file, title, subtitle, df_per_sample=None, df_boo
 def main(summaries, per_sample, bootstrap_quality, output, title, subtitle,
          results_dir, config_file):
     """Main entry point."""
-    # Load standard penalties and unknown signature info from config if provided
-    standard_penalties = {}
+    # Load unknown signature info from config if provided
     unknown_sig_config = None
     cosmic_version_label = None
     out_of_reference_sigs = []
@@ -5351,7 +5351,6 @@ def main(summaries, per_sample, bootstrap_quality, output, title, subtitle,
                 print(f"Config file exists, loading...")
             with open(config_file, 'r') as f:
                 config_data = yaml.safe_load(f)
-                standard_penalties = config_data.get('standard_penalties', {})
                 cosmic_version_label = _derive_cosmic_label(
                     config_data.get('cosmic_signatures', {}).get('base_file')
                 )
@@ -5378,65 +5377,16 @@ def main(summaries, per_sample, bootstrap_quality, output, title, subtitle,
     # Load summary data only for df_raw (used in realization stability plots)
     _, df_raw = load_evaluation_data(summaries, return_raw=True)
 
-    # Load per-sample metrics and apply per-sample oracle penalty selection:
-    # for each (cancer_type, data_type, tool, num_muts, replicate, sample) keep
-    # the row with the lowest individual-sample TAE across all penalty values.
-    # Non-penalty tools have a single penalty value and are kept as-is.
     df_per_sample = None
     if per_sample:
         print(f"\nLoading per-sample metrics from {len(per_sample)} file(s)...")
         df_per_sample = load_per_sample_data(per_sample)
-        if df_per_sample is not None and 'penalty' in df_per_sample.columns and 'TAE' in df_per_sample.columns:
-            pen_tools_ps = set(
-                df_per_sample.groupby('tool')['penalty']
-                .nunique(dropna=True)
-                .pipe(lambda s: s[s > 1].index)
-            )
-            if pen_tools_ps:
-                pen_ps = df_per_sample[df_per_sample['tool'].isin(pen_tools_ps)]
-                # Find single best penalty per tool: lowest mean TAE across all samples
-                best_penalty_per_tool = (
-                    pen_ps.groupby(['tool', 'penalty'])['TAE']
-                    .mean()
-                    .groupby('tool')
-                    .idxmin()
-                    .apply(lambda x: x[1])
-                )
-                print(f"  Best penalty per tool: {best_penalty_per_tool.to_dict()}")
-                mask = pen_ps.apply(lambda r: r['penalty'] == best_penalty_per_tool[r['tool']], axis=1)
-                pen_ps = pen_ps[mask]
-                no_pen_ps = df_per_sample[~df_per_sample['tool'].isin(pen_tools_ps)]
-                df_per_sample = pd.concat([pen_ps, no_pen_ps], ignore_index=True)
-                print(f"  Best-overall penalty selection for {sorted(pen_tools_ps)}. Shape: {df_per_sample.shape}")
 
-    # Re-aggregate the best-overall-penalty-selected per-sample data into the summary df.
     if df_per_sample is not None and not df_per_sample.empty:
         df = reaggregate_from_per_sample(df_per_sample)
-        print(f"  Summary df re-aggregated from best-overall-penalty data. Shape: {df.shape}")
+        print(f"  Summary df re-aggregated from per-sample data. Shape: {df.shape}")
     else:
-        # Fallback: use pre-aggregated summary with per-replicate lowest-TAE selection
         df, _ = load_evaluation_data(summaries, return_raw=True)
-        if 'penalty' in df.columns and 'TAE' in df.columns:
-            penalty_tools = set(
-                df.groupby('tool')['penalty'].nunique(dropna=True)
-                .pipe(lambda s: s[s > 1].index)
-            )
-            if penalty_tools:
-                pen_df = df[df['tool'].isin(penalty_tools)]
-                # Find single best penalty per tool: lowest mean TAE across all groups
-                best_penalty_per_tool = (
-                    pen_df.groupby(['tool', 'penalty'])['TAE']
-                    .mean()
-                    .groupby('tool')
-                    .idxmin()
-                    .apply(lambda x: x[1])
-                )
-                print(f"  Best penalty per tool (fallback): {best_penalty_per_tool.to_dict()}")
-                mask = pen_df.apply(lambda r: r['penalty'] == best_penalty_per_tool[r['tool']], axis=1)
-                pen_df = pen_df[mask]
-                no_pen_df = df[~df['tool'].isin(penalty_tools)]
-                df = pd.concat([pen_df, no_pen_df], ignore_index=True)
-        print(f"  WARNING: Using fallback per-replicate penalty selection. Shape: {df.shape}")
 
     # Load bootstrap quality assessment if provided
     df_bootstrap = None
@@ -5444,7 +5394,7 @@ def main(summaries, per_sample, bootstrap_quality, output, title, subtitle,
         print(f"\nLoading bootstrap quality assessment from {len(bootstrap_quality)} file(s)...")
         df_bootstrap = load_evaluation_data(bootstrap_quality)
 
-    generate_report(df, output, title, subtitle, df_per_sample, df_bootstrap, df_raw, results_dir, standard_penalties, unknown_sig_config, cosmic_version_label, out_of_reference_sigs, relevance)
+    generate_report(df, output, title, subtitle, df_per_sample, df_bootstrap, df_raw, results_dir, unknown_sig_config, cosmic_version_label, out_of_reference_sigs, relevance)
 
 
 if 'snakemake' in dir():

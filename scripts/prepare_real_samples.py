@@ -9,6 +9,21 @@ convention used in the PCAWG input files.
 from argparse import ArgumentParser
 import pandas as pd
 import os
+import re
+
+
+def sanitize_sample_name(name: str) -> str:
+    """Replace any character outside [A-Za-z0-9._] with '.'.
+
+    R's read.csv/read.table default to check.names=TRUE, which silently mangles
+    column names into valid R identifiers this same way (make.names()) — e.g.
+    "Tissue::SampleID" becomes "Tissue..SampleID". Doing it here, once, before
+    any tool sees the data, means every tool (R or Python) gets identical sample
+    names, instead of R-based tools silently diverging from Python-based tools
+    reading the same source file (which would otherwise break cross-tool
+    agreement matching, same issue as fit_external_catalog.py).
+    """
+    return re.sub(r"[^A-Za-z0-9._]", ".", name)
 
 
 def parse_arguments():
@@ -51,6 +66,7 @@ def main():
     real_data = pd.read_csv(args.input_catalog, sep='\t', index_col='Type', comment='#')
     counts = select_cancer_type(real_data, args.cancer_type)
     print(f"Using {counts.shape[1]} real {args.cancer_type} samples (native mutation counts, no downsampling)")
+    counts.columns = [sanitize_sample_name(c) for c in counts.columns]
 
     stem = f"{args.cancer_type}-w_0-{args.num_muts_label}"
     for format_name in args.output_formats:

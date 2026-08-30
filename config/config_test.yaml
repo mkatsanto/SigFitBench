@@ -1,25 +1,27 @@
 # ============================================================================
-# SigFitTest Workflow Configuration — config_unknown_0.yaml
-# Benchmark run: all 16 tools, 3 tissues, 0% of mutations from unknown
-# (out-of-reference) signatures. See README.md for full documentation.
+# SigFitTest Workflow Configuration — config_test.yaml
+# Quick smoke-test run: the poster benchmark's tool set minus SigTrim, SigID,
+# and FSPA (their upstream repos are still under development and can't be
+# invoked yet — see README.md's Available Tools section), 2 cancer types,
+# small mutation burdens, few samples, ~10% unknown-signature fraction.
+# Meant to finish in minutes on a laptop so you can confirm the install
+# works before running a full benchmark config. See README.md for full
+# documentation.
 # ============================================================================
 
 # ============================================================================
 # CORE SETTINGS
 # ============================================================================
 
-tools_to_run: [
-  "MutationalPatterns", "signature_tools", "MuSiCal", "SPA", "SigID", "SigTrim"]
-#"deconstructSigs", "mmsig", "sigfit", "siglasso","FSPA",
-#  "sigminer", "signature_tools", "sigspack", "yapsa",
+tools_to_run: ["signature_tools", "MutationalPatterns", "SPA", "MuSiCal"]
 
-num_muts: [250, 500, 1000, 2000, 5000, 10000, 50000, 100000]   # mutations per sample
+num_muts: [1000, 10000]   # mutations per sample
 
 # Available WGS cancer types: Breast, CNS-GBM, ColoRect-AdenoCA, Eso-AdenoCA, Head-SCC,
 #   Liver-HCC, Lung-AdenoCA, Lymph-BNHL, Ovary-AdenoCA, Panc-AdenoCA, Skin-Melanoma, Stomach-AdenoCA
-cancer_types: ["Head-SCC", "Breast", "Ovary-AdenoCA", "Lung-AdenoCA", "ColoRect-AdenoCA",  "Skin-Melanoma"]
+cancer_types: ["Head-SCC", "Breast"]
 
-num_samples: 100
+num_samples: 5
 num_realizations: 1
 
 data_types: ["synthetic"]                # "synthetic", "realsim", "external", "custom"
@@ -27,7 +29,7 @@ relevance_modes: ["standard"]            # "standard", "relevant", or both
 
 # Unknown signatures: excluded from the fitting reference, included in simulation
 out_of_reference_sigs: ["SBS10c", "SBS10d", "SBS86", "SBS87", "SBS88", "SBS89", "SBS90", "SBS91", "SBS92", "SBS93", "SBS94", "SBS95"]
-out_of_reference_weights: [0.0]          # fraction of mutations from unknown sigs
+out_of_reference_weights: [0.1]          # fraction of mutations from unknown sigs
 
 random_seed: 0
 
@@ -36,8 +38,8 @@ random_seed: 0
 # ============================================================================
 
 input_dir: "input"
-output_dir: "results_unknown_0"
-log_dir: "logs_unknown_0"
+output_dir: "results_test"
+log_dir: "logs_test"
 signature_contributions_dir: "cosmic_tissue_data"
 
 # ============================================================================
@@ -123,7 +125,7 @@ tool_formats:
     tools: ["MutationalPatterns", "musical", "sigtrim", "sigid"]
     input_data_base: "data/data_for_MutationalPatterns.dat"
     cosmic_signatures:
-      standard: "input/COSMIC_v3_SBS_GRCh38.txt"
+      standard: "{output_dir}/cosmic_signatures/COSMIC_v3_SBS_GRCh38_tab_with_index.txt"
 
   csv_with_index:
     tools: ["sigfit", "mmsig", "sigminer", "sigspack", "yapsa"]

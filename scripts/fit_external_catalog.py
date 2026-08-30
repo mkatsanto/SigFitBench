@@ -28,13 +28,28 @@ Author: SigFitTest workflow
 """
 
 import argparse
+import csv
 import os
+import re
 import sys
 import warnings
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
+
+
+def sanitize_sample_name(name: str) -> str:
+    """Replace any character outside [A-Za-z0-9._] with '.'.
+
+    R's read.csv/read.table default to check.names=TRUE, which silently mangles
+    column names into valid R identifiers this same way (make.names()) — e.g.
+    "Tissue::SampleID" becomes "Tissue..SampleID". Doing it here, once, before
+    any tool sees the data, means every tool (R or Python) gets identical sample
+    names, instead of R-based tools silently diverging from Python-based tools
+    reading the same source file (which broke cross-tool agreement matching).
+    """
+    return re.sub(r"[^A-Za-z0-9._]", ".", name)
 
 
 # ---------------------------------------------------------------------------
@@ -52,13 +67,21 @@ TYPE_INDEX_NAME_FORMATS = {
 
 
 def load_matrix_order(matrix_order_path: str) -> list:
-    """Load standard 96-context order from file (one context per line, no header)."""
+    """Load standard 96-context order from file (one context per line, no header).
+
+    input/mut_matrix_order_*.dat wraps each context in literal CSV double-quotes
+    (e.g. `"A[C>A]A"`), matching how every other consumer of this file reads it
+    (pd.read_csv, which strips CSV quoting automatically). A plain open()+strip()
+    here would keep the quote characters and never match the bare "A[C>A]A"
+    context names used elsewhere (e.g. a catalog's row index), silently zeroing
+    every context after reindex_to_standard_order — so this uses csv.reader too,
+    for the same quote-stripping behavior.
+    """
     contexts = []
-    with open(matrix_order_path, "r") as fh:
-        for line in fh:
-            line = line.strip()
-            if line:
-                contexts.append(line)
+    with open(matrix_order_path, "r", newline="") as fh:
+        for row in csv.reader(fh):
+            if row and row[0].strip():
+                contexts.append(row[0].strip())
     return contexts
 
 
@@ -67,11 +90,30 @@ def load_catalog(input_catalog: str) -> pd.DataFrame:
 
     Returns a DataFrame with contexts as rows and samples as columns.
     """
-    catalog = pd.read_csv(input_catalog, sep=None, index_col=0, engine="python")
+    # comment='#' skips leading comment lines (e.g. "# PCAWG mutational profiles...")
+    # before delimiter sniffing runs — otherwise sep=None can latch onto punctuation
+    # inside a comment line (e.g. a comma in "50,000") and misdetect the real
+    # delimiter for the whole file.
+    catalog = pd.read_csv(input_catalog, sep=None, index_col=0, engine="python", comment="#")
     catalog.index = catalog.index.astype(str).str.strip()
     catalog.columns = catalog.columns.astype(str).str.strip()
     catalog = catalog.apply(pd.to_numeric, errors="coerce").fillna(0.0)
     return catalog
+
+
+def select_tissue(catalog: pd.DataFrame, tissue_prefix: str) -> pd.DataFrame:
+    """Subset to columns whose 'Tissue::SampleID' prefix matches tissue_prefix.
+
+    Same convention and logic as prepare_real_samples.py's select_cancer_type,
+    used when a catalog's columns follow that naming (auto-detected — see
+    get_external_cancer_types in workflow/rules/common.smk).
+    """
+    prefix = f"{tissue_prefix}::"
+    selected = [c for c in catalog.columns if c.startswith(prefix)]
+    if not selected:
+        available = sorted({c.split("::")[0] for c in catalog.columns if "::" in c})
+        raise ValueError(f"No samples found for tissue_prefix={tissue_prefix!r}. Available: {available}")
+    return catalog[selected]
 
 
 def reindex_to_standard_order(catalog: pd.DataFrame, context_order: list) -> pd.DataFrame:
@@ -145,6 +187,13 @@ def main() -> None:
         "--num-muts-label", required=True,
         help="Integer label used in output filenames (= wildcards.num_muts).",
     )
+    parser.add_argument(
+        "--tissue-prefix", default=None,
+        help="If given, subset to columns named 'tissue_prefix::SampleID' (auto-detected "
+             "per-tissue splitting for catalogs using that convention — see "
+             "get_external_cancer_types in workflow/rules/common.smk). Omit to use every "
+             "column in the catalog as one flat dataset.",
+    )
     args = parser.parse_args()
 
     output_dir = Path(args.output_dir)
@@ -166,11 +215,28 @@ def main() -> None:
     )
 
     # ------------------------------------------------------------------
+    # Subset to one tissue if the catalog uses "Tissue::SampleID" columns
+    # ------------------------------------------------------------------
+    if args.tissue_prefix:
+        catalog = select_tissue(catalog, args.tissue_prefix)
+        print(
+            f"  Selected {catalog.shape[1]} samples for tissue_prefix={args.tissue_prefix!r}",
+            file=sys.stderr,
+        )
+
+    # ------------------------------------------------------------------
     # Reindex to standard context order
     # ------------------------------------------------------------------
     print(f"Loading matrix order from {args.matrix_order} ...", file=sys.stderr)
     context_order = load_matrix_order(args.matrix_order)
     catalog = reindex_to_standard_order(catalog, context_order)
+
+    # ------------------------------------------------------------------
+    # Sanitize sample names (after tissue selection, which needs the raw
+    # "Tissue::SampleID" columns; before saving, so every tool format gets
+    # the same already-safe names)
+    # ------------------------------------------------------------------
+    catalog.columns = [sanitize_sample_name(c) for c in catalog.columns]
 
     # ------------------------------------------------------------------
     # Save per-format count files

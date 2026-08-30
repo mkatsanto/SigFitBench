@@ -12,8 +12,7 @@ wildcard_constraints:
     identifier=r"[A-Za-z0-9_-]+",
     num_muts=r"(\d+|none)",
     relevance=r"(standard|relevant)",
-    rep=r"\d+",
-    penalty=r"[0-9.]+"
+    rep=r"\d+"
 
 
 rule mutationalpatterns:
@@ -135,7 +134,7 @@ rule mmsig:
             "mmsig_stdout.log"
         )
     conda:
-        os.path.join(workflow.basedir, "envs", "r-base.yaml")
+        os.path.join(workflow.basedir, "envs", "mmsig.yaml")
     threads: 1
     resources:
         mem_mb=lambda wildcards, attempt: 4000 * attempt,
@@ -186,7 +185,7 @@ rule sigfit:
             "sigfit_stdout.log"
         )
     conda:
-        os.path.join(workflow.basedir, "envs", "r-base.yaml")
+        os.path.join(workflow.basedir, "envs", "sigfit.yaml")
     threads: 1
     resources:
         mem_mb=lambda wildcards, attempt: 4000 * attempt,
@@ -672,9 +671,15 @@ rule sigid:
         data=lambda wildcards: get_input_data('sigid', wildcards),
         weights=lambda wildcards: get_cosmic_signatures("sigid", wildcards.relevance),
         matrix_order=config["matrix_order"],
-        true_weights=lambda wildcards: os.path.join(
-            config['output_dir'], "generated_data", wildcards.data_type,
-            f"weights_{wildcards.cancer_type}-w_{'0' if wildcards.data_type == 'realsim' else wildcards.rep}-{wildcards.num_muts}.dat"
+        # true_weights is optional for sigid itself (used only to log a diagnostic TAE,
+        # never influences the fit — see SigID/sigid/cli.py's --true-weights help text);
+        # no weights_*.dat is ever produced for realsim/external (no ground truth), so
+        # this resolves to no input at all for those, rather than a missing-file error.
+        true_weights=lambda wildcards: (
+            os.path.join(
+                config['output_dir'], "generated_data", wildcards.data_type,
+                f"weights_{wildcards.cancer_type}-w_{'0' if wildcards.data_type == 'realsim' else wildcards.rep}-{wildcards.num_muts}.dat"
+            ) if wildcards.data_type not in ("realsim", "external") else []
         ),
     output:
         result=os.path.join(
@@ -692,6 +697,9 @@ rule sigid:
         min_penalty=get_tool_config("sigid").get("min_penalty", 0.001),
         max_penalty=get_tool_config("sigid").get("max_penalty", 10000.0),
         initial_remove_penalty=get_tool_config("sigid").get("initial_remove_penalty", 0.05),
+        true_weights_arg=lambda wildcards, input: (
+            f"--true-weights {input.true_weights}" if input.true_weights else ""
+        ),
     log:
         stderr=os.path.join(
             config["log_dir"],
@@ -727,5 +735,5 @@ rule sigid:
         --min-penalty {params.min_penalty} \
         --max-penalty {params.max_penalty} \
         --initial-remove-penalty {params.initial_remove_penalty} \
-        --true-weights {input.true_weights} \
+        {params.true_weights_arg} \
         --n-jobs {threads}) > {log.stdout} 2> {log.stderr}"

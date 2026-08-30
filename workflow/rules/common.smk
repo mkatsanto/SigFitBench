@@ -28,13 +28,98 @@ def get_realsim_cancer_types():
     """Cancer types to run for realsim, from simulation.real_samples.cancer_types."""
     return config.get("simulation", {}).get("real_samples", {}).get("cancer_types", [])
 
+
+def _peek_catalog_header(catalog_path):
+    """Return the first non-comment, non-blank line of a catalog file (its header row),
+    or None if the file can't be read. Used only to detect column-naming convention —
+    doesn't load the full catalog (that's fit_external_catalog.py's job at run time)."""
+    if not catalog_path or not os.path.exists(catalog_path):
+        return None
+    with open(catalog_path, "r") as fh:
+        for line in fh:
+            line = line.strip()
+            if line and not line.startswith("#"):
+                return line
+    return None
+
+
+_EXTERNAL_CANCER_TYPES_CACHE = {}
+
+
+def get_external_cancer_types(ds_name):
+    """Cancer types (tissues) for one external_datasets entry.
+
+    Auto-detected from the catalog's column headers using the "Tissue::SampleID"
+    convention (same one realsim's PCAWG file uses) — peeks at just the header row,
+    not the whole file. If any column follows that convention, returns the sorted
+    list of distinct tissue prefixes found (per-tissue splitting, like realsim). If
+    none do, returns [ds_name]: the whole dataset is fit as one flat bucket named
+    after the dataset key itself (unsplit — the original external behavior, still
+    correct for catalogs that don't use per-tissue column naming).
+    """
+    if ds_name in _EXTERNAL_CANCER_TYPES_CACHE:
+        return _EXTERNAL_CANCER_TYPES_CACHE[ds_name]
+
+    catalog_path = config.get("external_datasets", {}).get(ds_name, {}).get("catalog")
+    header = _peek_catalog_header(catalog_path)
+    result = [ds_name]
+    if header:
+        delim = "\t" if "\t" in header else ("," if "," in header else None)
+        cols = header.split(delim)[1:] if delim else header.split()[1:]  # skip index column
+        tissues = sorted({c.strip().strip('"') .split("::")[0] for c in cols if "::" in c})
+        if tissues:
+            result = tissues
+
+    _EXTERNAL_CANCER_TYPES_CACHE[ds_name] = result
+    return result
+
+
+def get_all_external_cancer_types():
+    """Flat list of "cancer_type" wildcard values across every external_datasets
+    entry — each dataset contributes either its own key (unsplit) or one entry per
+    auto-detected tissue (get_external_cancer_types). Used as the cancer_type
+    dimension in rule all's expand()-based external_tool_results."""
+    return [
+        ct for ds_name in config.get("external_datasets", {})
+        for ct in get_external_cancer_types(ds_name)
+    ]
+
+
+def resolve_external_dataset(cancer_type):
+    """Map a "cancer_type" wildcard back to (dataset_name, tissue_prefix_or_None).
+
+    tissue_prefix is None when the matched dataset isn't using per-tissue splitting
+    (cancer_type == the dataset key itself); otherwise it's the tissue to filter the
+    catalog to (passed to fit_external_catalog.py's --tissue-prefix).
+    """
+    for ds_name in config.get("external_datasets", {}):
+        tissues = get_external_cancer_types(ds_name)
+        if tissues == [ds_name] and cancer_type == ds_name:
+            return ds_name, None
+        if cancer_type in tissues:
+            return ds_name, cancer_type
+    raise ValueError(
+        f"cancer_type {cancer_type!r} does not match any external_datasets entry "
+        f"(available: {list(config.get('external_datasets', {}).keys())})"
+    )
+
 active_data_types = [
     dt for dt in config.get("data_types", ["synthetic"])
-    if dt not in ("custom", "realsim")
+    if dt not in ("custom", "realsim", "external")
 ]
 
 if "realsim" in config.get("data_types", []) and not _realsim_configured():
     logger.warning("realsim requested but simulation.real_samples.input_real_catalog is not set")
+
+# Whether this run has any ground-truth data (synthetic/custom) vs. any no-ground-truth
+# data (realsim/external) — rule all uses these to request the right summary/report
+# target(s) only, instead of unconditionally requesting both (which would crash
+# compute_summary_metrics for a no-ground-truth-only run: get_eval_files() returns []
+# and its --input-files argument requires at least one file).
+_has_ground_truth_data = bool(active_data_types) or "custom" in config.get("data_types", [])
+_has_no_ground_truth_data = (
+    "realsim" in config.get("data_types", []) or "external" in config.get("data_types", [])
+)
 
 
 # ==============================================================================
@@ -42,32 +127,33 @@ if "realsim" in config.get("data_types", []) and not _realsim_configured():
 # ==============================================================================
 
 def get_agreement_tools():
-    """Tools usable for cross-tool agreement: excludes penalty-sweep tools (no single
-    contribution.dat) and SigID (its auto-penalty search requires a true_weights input
-    we don't have for no-ground-truth data types)."""
-    excluded = {"SigID"}
-    return [t for t in get_selected_tools() if not has_penalty_sweep(t) and t not in excluded]
+    """Tools usable for cross-tool agreement. SigID runs fine here — its true_weights
+    input is optional (diagnostic-only), so it fits no-ground-truth data like every
+    other tool."""
+    return get_selected_tools()
 
 
-def get_agreement_files():
-    """Per-cell tool-agreement TSVs for every active no-ground-truth dataset."""
+def get_agreement_files(suffix="tool_agreement"):
+    """Per-cell TSVs (tool_agreement or signature_calls — both outputs of the same
+    evaluate_tool_agreement rule) for every active no-ground-truth dataset."""
     eval_dir = os.path.join(config['output_dir'], "evaluation")
     relevance_modes = config.get("relevance_modes", ["standard"])
     files = []
 
     if "realsim" in config.get("data_types", []):
         files += expand(
-            os.path.join(eval_dir, "realsim_{cancer_type}_none_{relevance}_tool_agreement.tsv"),
+            os.path.join(eval_dir, f"realsim_{{cancer_type}}_none_{{relevance}}_{suffix}.tsv"),
             cancer_type=get_realsim_cancer_types(),
             relevance=relevance_modes,
         )
 
     if "external" in config.get("data_types", []):
-        for ds_name, ds in config.get("external_datasets", {}).items():
-            files += expand(
-                os.path.join(eval_dir, f"external_{ds_name}_{ds['num_muts_label']}_{{relevance}}_tool_agreement.tsv"),
-                relevance=relevance_modes,
-            )
+        for ds_name in config.get("external_datasets", {}):
+            for cancer_type in get_external_cancer_types(ds_name):
+                files += expand(
+                    os.path.join(eval_dir, f"external_{cancer_type}_none_{{relevance}}_{suffix}.tsv"),
+                    relevance=relevance_modes,
+                )
 
     return files
 
@@ -259,27 +345,16 @@ def get_selected_tools():
     return all_tools
 
 
-def has_penalty_sweep(tool_name):
-    """Check if a tool is in the global penalty_tools list"""
-    return tool_name in config.get("penalty_tools", [])
-
-
-def get_penalty_values(tool_name):
-    """Get the global penalty sweep values for a penalty tool"""
-    if not has_penalty_sweep(tool_name):
-        return []
-    return [str(float(p)) for p in config["penalty_values"]]
-
-
 # Pre-joined string for passing out-of-reference signatures to shell commands
 OUT_OF_REF_SIGS_STR = ' '.join(config["out_of_reference_sigs"])
 
 
 def get_eval_files():
-    """Return all per-sample evaluation TSV paths (regular + penalty sweep) for aggregation.
+    """Return all per-sample evaluation TSV paths for aggregation.
 
-    realsim has no ground truth and is excluded from active_data_types entirely —
-    it's evaluated separately via the tool-agreement pipeline, not this function.
+    realsim and external have no ground truth and are excluded from active_data_types
+    entirely — they're evaluated separately via the tool-agreement pipeline, not this
+    function.
     """
     _eval_dir = os.path.join(config['output_dir'], "evaluation")
     _n_reps = config["num_realizations"]
@@ -295,13 +370,7 @@ def get_eval_files():
         )
         files += expand(
             os.path.join(_eval_dir, "{data_type}_{cancer_type}_{num_muts}_{relevance}_{tool}_w{rep}_per_sample.tsv"),
-            tool=[t for t in get_selected_tools() if not has_penalty_sweep(t)],
-            **_common
-        )
-        files += expand(
-            os.path.join(_eval_dir, "{data_type}_{cancer_type}_{num_muts}_{relevance}_{tool}_penalty_{penalty}_w{rep}_per_sample.tsv"),
-            tool=[t for t in get_selected_tools() if has_penalty_sweep(t)],
-            penalty=[str(float(p)) for p in config.get("penalty_values", [])],
+            tool=get_selected_tools(),
             **_common
         )
     custom_datasets = config.get("custom_datasets", {})
@@ -315,13 +384,7 @@ def get_eval_files():
         )
         files += expand(
             os.path.join(_eval_dir, "{data_type}_{cancer_type}_{num_muts}_{relevance}_{tool}_w{rep}_per_sample.tsv"),
-            tool=[t for t in get_selected_tools() if not has_penalty_sweep(t)],
-            **_common_custom
-        )
-        files += expand(
-            os.path.join(_eval_dir, "{data_type}_{cancer_type}_{num_muts}_{relevance}_{tool}_penalty_{penalty}_w{rep}_per_sample.tsv"),
-            tool=[t for t in get_selected_tools() if has_penalty_sweep(t)],
-            penalty=[str(float(p)) for p in config.get("penalty_values", [])],
+            tool=get_selected_tools(),
             **_common_custom
         )
 

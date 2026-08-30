@@ -740,8 +740,6 @@ def main():
                         help='Cancer type for this evaluation (e.g., Breast, Lung)')
     parser.add_argument('--data-type', type=str, default=None,
                         help='Data type: synthetic or realsim (used in output and plot titles)')
-    parser.add_argument('--penalty-value', type=str, default=None,
-                        help='Penalty parameter value for the tool (optional; not all methods use a penalty)')
     parser.add_argument('--plots-dir',
                         help='Directory to save comparison plots (multi-tool mode)')
     parser.add_argument('--relevance', default='standard',
@@ -821,7 +819,6 @@ def main():
     output_path = Path(args.output)
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    penalty_str = args.penalty_value if args.penalty_value is not None else 'None'
     cancer_type_str = args.cancer_type if args.cancer_type is not None else 'None'
     data_type_str = args.data_type if args.data_type is not None else 'None'
 
@@ -829,7 +826,7 @@ def main():
         return f"{v:.4f}" if (v is not None and not (isinstance(v, float) and np.isnan(v))) else "nan"
 
     with open(output_path, 'w') as f:
-        f.write('cancer_type\tdata_type\ttool\tpenalty\treplicate\tsample\tnum_muts\t')
+        f.write('cancer_type\tdata_type\ttool\treplicate\tsample\tnum_muts\t')
         f.write('TAE\tnRMSE\tweight_tot\tn_eff\t')
         f.write('P\tR\tS\tF1\tMCC\t')
         f.write('MAE_active\twtot_FP\tnum_FP\twtot_FN\tnum_FN\tnum_TP\tnum_TN\t')
@@ -837,7 +834,7 @@ def main():
         f.write('highest_ENP_known\thighest_ENP_unknown\n')
 
         for sm in all_per_sample_metrics:
-            f.write(f"{cancer_type_str}\t{data_type_str}\t{sm['tool']}\t{penalty_str}\t{args.realization}\t{sm['sample']}\t{sm['num_muts']}\t")
+            f.write(f"{cancer_type_str}\t{data_type_str}\t{sm['tool']}\t{args.realization}\t{sm['sample']}\t{sm['num_muts']}\t")
             f.write(f"{sm['TAE']:.4f}\t{sm['nRMSE']:.4f}\t{sm['weight_tot']:.4f}\t{sm['n_eff']:.4f}\t")
             f.write(f"{sm['P']:.4f}\t{sm['R']:.4f}\t{sm['S']:.4f}\t{sm['F1']:.4f}\t{sm['MCC']:.4f}\t")
             f.write(f"{sm['MAE_active']:.4f}\t{sm['wtot_FP']:.4f}\t{sm['num_FP']}\t{sm['wtot_FN']:.4f}\t{sm['num_FN']}\t")

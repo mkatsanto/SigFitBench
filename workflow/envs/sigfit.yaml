@@ -1,0 +1,31 @@
+---
+channels:
+  - conda-forge
+  - bioconda
+channel_priority: strict
+dependencies:
+  - r-base>=4.0
+  - r-dplyr
+  - r-optparse
+  # sigfit itself is installed by sigfit.post-deploy.sh after this env is
+  # created: it's GitHub-only (kgori/sigfit), not on CRAN/Bioconductor/conda
+  # at all.
+  - r-remotes
+  # compiler toolchain: sigfit bundles its own .stan model files that get
+  # compiled into C++/machine code at package-install time via rstan --
+  # this step is CPU-heavy and slow regardless of platform (it's how sigfit
+  # itself works, not a packaging gap), and needs a working C++ toolchain.
+  - compilers
+  # sigfit's Imports/LinkingTo (from its DESCRIPTION) -- installed via
+  # conda so only sigfit itself needs to come from GitHub.
+  - r-rcpp
+  - r-rcppeigen
+  - r-bh
+  - r-rstan
+  - r-stanheaders
+  - r-rstantools
+  - r-coda
+  - r-clue
+  - r-knitr
+  - r-rmarkdown
+...

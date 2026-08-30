@@ -1,0 +1,57 @@
+---
+channels:
+  - conda-forge
+  - bioconda
+channel_priority: strict
+dependencies:
+  - r-base>=4.0
+  - r-dplyr
+  - r-optparse
+  # explicit BLAS/LAPACK provider: without pinning this, conda can solve an
+  # env where R's own stats.so links against libblas.3.dylib but nothing
+  # actually ships it, breaking every R invocation at runtime
+  - libblas
+  - liblapack
+  # mmsig itself, and its hard Imports MutationalPatterns and NMF (neither
+  # has a working osx-arm64 conda/bioconda build), are installed by
+  # mmsig.post-deploy.sh after this env is created (see that script for
+  # why). r-remotes/r-biocmanager are here for that step to use.
+  - r-remotes
+  - r-biocmanager
+  # compiler toolchain, needed by the post-deploy step to build NMF from
+  # source (no osx-arm64 conda binary for r-nmf)
+  - compilers
+  # mmsig's remaining Imports (from its DESCRIPTION), installed via conda so
+  # only mmsig itself (and MutationalPatterns/NMF) need to come from
+  # GitHub/Bioconductor directly in post-deploy.sh.
+  # NB: r-nmf is deliberately NOT listed here -- conda-forge has no
+  # osx-arm64 build for it, only osx-64/linux/win. It's compiled from CRAN
+  # source instead, in mmsig.post-deploy.sh (needed transitively via
+  # MutationalPatterns).
+  - r-seqinr
+  - r-plyr
+  - r-tibble
+  - r-tidyr
+  - r-ggplot2
+  - r-reshape2
+  - r-rcolorbrewer
+  - r-deconstructsigs
+  - bioconductor-bsgenome
+  - bioconductor-genomicfeatures
+  - bioconductor-genomicranges
+  - bioconductor-iranges
+  - bioconductor-genomeinfodb
+  # NB: the BSgenome.Hsapiens.UCSC.hg19 and TxDb.Hsapiens.UCSC.hg19.knownGene
+  # genome data packages (mmsig's Depends/Imports) are deliberately NOT
+  # listed here -- conda's post-link step for these downloads the genome
+  # data with a bare curl call with no retry logic, so any network hiccup
+  # fails the whole env build (same issue noted in signature_tools.yaml).
+  # They're left for mmsig.post-deploy.sh's remotes::install_github to pull
+  # in automatically as unmet Imports instead, via R's own (retry-friendlier)
+  # BiocManager-backed installer.
+  # bioconductor-biocgenerics and bioconductor-variantannotation, needed
+  # transitively by MutationalPatterns (see mutationalpatterns.yaml).
+  - bioconductor-biocgenerics
+  - bioconductor-variantannotation
+  - bioconductor-biostrings
+...

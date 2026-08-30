@@ -1,10 +1,18 @@
 # SigFitBench
 
-[![Snakemake](https://img.shields.io/badge/snakemake-≥7.0-brightgreen.svg)](https://snakemake.github.io)
+[![Snakemake](https://img.shields.io/badge/snakemake-≥8.20-brightgreen.svg)](https://snakemake.github.io)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-A Snakemake workflow for benchmarking mutational signature fitting tools. It runs a dozen third-party
-tools alongside two purpose-built methods for the unknown-signature problem — `SigID` and `SigTrim` —
-against synthetic and real mutation catalogs, and evaluates them all side by side.
+A reproducible Snakemake workflow for benchmarking mutational signature fitting tools.
+It runs a dozen established third-party tools alongside two purpose-built methods for the
+unknown-signature problem — `SigID` and `SigTrim` (not yet public, see note below) — against
+synthetic and real mutation catalogs, scores them all with the same ground truth and metrics,
+and produces a single interactive HTML report comparing the results.
+
+> **Note**: `FSPA` (`github.com/sirenfrappe/FSPA`), `SigTrim`, and `SigID` (both
+> `github.com/mkatsanto/...`) are packaged in separate repos that aren't public yet — they'll be
+> released soon. Until then they can't be invoked from `tools_to_run`; use the other tools listed
+> under [Available Tools](#available-tools) in the meantime.
 
 ## Introduction
 
@@ -74,7 +82,7 @@ Restart terminal after installation.
 git clone https://github.com/mkatsanto/SigFitBench.git
 cd SigFitBench
 
-# Create base environment (10-20 min)
+# Create base environment (a few minutes)
 conda env create -f install/environment.yml
 
 # Activate
@@ -95,7 +103,7 @@ Tool-specific conda environments are created automatically on first run via the 
 conda activate sigfitbench
 cd SigFitBench
 
-# Run with a specific config file
+# Quick smoke test (3 fast tools, small data, finishes in minutes)
 snakemake --snakefile workflow/Snakefile --configfile config/config_test.yaml \
   --cores 8 --use-conda --rerun-incomplete
 ```
@@ -112,7 +120,7 @@ Replace `config_test.yaml` with any config from the `config/` directory (see [Co
 **Option B — `local-conda` profile:**
 
 `profiles/local-conda` bundles the same flags (`use-conda: true`, `rerun-incomplete: true`,
-`cores: 3`) into a single reusable profile, so you don't have to repeat them every time:
+`cores: 12`) into a single reusable profile, so you don't have to repeat them every time:
 
 ```bash
 conda activate sigfitbench
@@ -122,38 +130,41 @@ snakemake --profile profiles/local-conda \
   --snakefile workflow/Snakefile --configfile config/config_test.yaml
 ```
 
-Override `cores: 3` from the profile with `--cores N` on the command line if you want more
-parallelism than the default.
+Override the profile's `cores` setting with `--cores N` on the command line, or edit
+`profiles/local-conda/config.yaml` directly, to match your machine's parallelism.
 
 **First run**: conda environments are created automatically (30–60 min). Subsequent runs skip this step.
 
-### SLURM Cluster Execution (UBELIX)
+### SLURM Cluster Execution
 
-`profiles/slurm-conda` is a ready-to-use Snakemake profile for UBELIX (University of Bern HPC). It
-submits jobs via `sbatch` (`profiles/slurm-submit.py`), polls status via `profiles/slurm-status.py`,
-and already sets `use-conda: true` and `rerun-incomplete: true`, so those flags don't need to be
-repeated on the command line.
+`profiles/slurm-generic` is a cluster-agnostic Snakemake profile built on Snakemake 8's native
+`executor: slurm` plugin (already pinned in `install/environment.yml` as
+`snakemake-executor-plugin-slurm`) — no separate submission scripts needed. It already sets
+`use-conda: true` and `rerun-incomplete: true`, so those flags don't need to be repeated on the
+command line. Copy it and fill in the commented-out `slurm_partition`/`slurm_account`/`qos` fields
+under `default-resources` for your own cluster (check `sinfo`/`sacctmgr show associations` or your
+cluster's docs for the right values).
 
 ```bash
 conda activate sigfitbench
 cd SigFitBench
 
-snakemake --profile profiles/slurm-conda \
+snakemake --profile profiles/slurm-generic \
   --snakefile workflow/Snakefile --configfile config/config_test.yaml
 ```
 
-- **Account/QoS/partition**: pre-configured in `profiles/slurm-config.json`'s `__default__` block
-  (`account: gratis`, `qos: job_gratis`, `partition: epyc2`) — edit these if your UBELIX allocation
-  differs.
-- **Per-rule time limits**: also in `profiles/slurm-config.json`, keyed by rule name (e.g. `extended`,
-  `sigfit`, `assess_fit_quality_bootstrap`) and tuned to each rule's expected cost; add/adjust an entry
-  there instead of passing `--time` on the command line.
-- **Parallel jobs**: the profile submits up to `jobs: 10` at once by default — override with `--jobs N`.
-- **Per-job SLURM stdout/stderr**: every config file must set `cluster_log_dir` (e.g.
-  `cluster_log_dir: "logs_test/slurm"`), which every rule passes through as
-  `params.cluster_log_path` for `slurm-config.json`'s `output` template
-  (`{params.cluster_log_path}/{rule}.{wildcards}-%j-%N.out`). This is separate from each rule's own
-  `log:` files under `log_dir`, which already work the same locally or on SLURM.
+- **Account/QoS/partition**: set under `default-resources` in your profile's `config.yaml`.
+- **Per-rule time limits**: `set-resources` in the same file, keyed by rule name (e.g. `sigminer`,
+  `sigfit`), each a `runtime:` in minutes tuned to that rule's expected cost — cluster-agnostic as
+  shipped; add/adjust an entry there instead of passing `--time` on the command line.
+- **Parallel jobs**: the profile submits up to `jobs: 50` at once by default — override with `--jobs N`.
+- **Per-job SLURM stdout/stderr**: handled automatically by the executor plugin under
+  `.snakemake/slurm_logs/`. This is separate from each rule's own `log:` files under `log_dir`,
+  which already work the same locally or on SLURM.
+
+`profiles/slurm-conda` is the same profile already filled in for UBELIX (University of Bern HPC) —
+use it as a worked example if you're on UBELIX, or as a reference for what real values look like
+when adapting `slurm-generic` to your own cluster.
 
 ---
 
@@ -165,29 +176,26 @@ All config files live in `config/`. There is no default `config.yaml` — you mu
 
 | File | Purpose |
 |------|---------|
-| `config_unknown_0.yaml` | Benchmark run: all 16 tools, 3 tissues, 0% unknown-signature fraction |
-| `config_unknown_10.yaml` | Same, at 10% unknown-signature fraction |
-| `config_unknown_20.yaml` | Same, at 20% unknown-signature fraction |
-| `config_unknown_30.yaml` | Same, at 30% unknown-signature fraction |
+| `config_test.yaml` | Quick smoke test: `signature_tools`, `MutationalPatterns`, `SPA`, `MuSiCal`, 2 cancer types, 5 samples, ~10% unknown-signature fraction — confirm the install works before scaling up |
 | `config_mysigmix.yaml` | Example `"custom"` data type run, drawing signature mixes from a user-supplied combinations file |
 
 All configs share the same structure (see [Key Parameters](#key-parameters) below) — copy one and
 adjust `tools_to_run`, `num_muts`, `cancer_types`, `num_samples`, and `out_of_reference_weights` for
 your own run. Runtime scales with `num_samples`, `num_muts`, `num_realizations`, and how many
-tools/penalty values are selected — see [Performance Expectations](#performance-expectations).
+tools are selected — see [Performance Expectations](#performance-expectations).
 
 ### Key Parameters
 
 ```yaml
 # Tools to run
-tools_to_run: ["SPA", "MuSiCal", "SigID", "SigTrim"]
+tools_to_run: ["signature_tools", "MutationalPatterns", "SPA", "MuSiCal"]
 # Use "all" to run every tool below, or a list of specific names — casing must match the
 # names in the Available Tools table below (it's used verbatim in output filenames).
 
 # Simulation parameters
 num_muts: [100000, 1000000]       # Mutations per sample
-num_samples: 30                    # Samples per cohort
-num_realizations: 1                # Independent runs
+num_samples: 30                    # Samples per cohort — each gets its own true signature mixture
+num_realizations: 1                # Repeat draws of the *same* mixtures with fresh sampling noise
 cancer_types: ["Head-SCC"]         # Cancer types (must match cosmic_tissue_data/)
 data_types: ["synthetic"]          # "synthetic", "realsim", "external", "custom" — see below
 relevance_modes: ["standard"]      # "standard", "relevant", or both
@@ -197,41 +205,50 @@ out_of_reference_sigs: ["SBS86", "SBS90", "SBS92"]
 out_of_reference_weights: [0.1, 0.2]   # Fraction of mutations from unknown sigs
 
 # Output
-output_dir: "results_unknown_10"
-log_dir: "logs_unknown_10"
-cluster_log_dir: "logs_unknown_10/slurm"     # SLURM job stdout/stderr — required by every config, see SLURM section above
+output_dir: "results_test"
+log_dir: "logs_test"
+cluster_log_dir: "logs_test/slurm"     # SLURM job stdout/stderr — required by every config, see SLURM section above
 
 # Reproducibility
 random_seed: 0
 ```
 
+**`num_samples` vs. `num_realizations`** — these vary genuinely different things, not just "more data" two ways:
+- `num_samples` draws that many *distinct* ground-truth signature mixtures (which signatures are
+  active, at what proportions) — more samples means testing a tool across a wider diversity of
+  possible tumors.
+- `num_realizations` reruns the *same* set of mixtures from `num_samples`, redrawing only the
+  actual mutation counts sampled from them — every rep has identical ground truth, differing only
+  in random sampling noise.
+
+A single realization can't tell you whether a tool's error came from a real weakness in fitting
+that particular signature mixture, or just an unlucky draw — this matters most at low `num_muts`,
+where multinomial sampling noise is proportionally large relative to the signal. Multiple
+realizations of the same mixtures let the benchmark average that noise out and separate a tool's
+systematic bias from unavoidable sampling variance.
+
 ### Available Tools
 
-`tools_to_run` accepts `"all"` or any of the following names, grouped by the input format they need
-(see `tool_formats` in each config — this is how the workflow decides which COSMIC-signature/catalog
-file variant to generate for each tool). The exact casing shown here is required — it's used verbatim
-in each tool's `{tool}_contribution.dat` output filename:
+`tools_to_run` accepts `"all"` or any of the following names. The exact casing shown here is
+required — it's used verbatim in each tool's `{tool}_contribution.dat` output filename:
 
-| Group | Tools |
-|---|---|
-| `tab_with_index` | `deconstructSigs`, `SPA`, `SPA_low`, `FSPA` |
-| `csv_no_index` | `MutationalPatterns`, `MuSiCal`, `SigID`, `SigTrim` |
-| `csv_with_index` | `sigfit`, `mmsig`, `sigminer`, `sigspack`, `yapsa` |
-| `csv_quoted` | `siglasso` |
-| `signature_tools` | `signature_tools` |
+`deconstructSigs`, `SPA`, `SPA_low`, `FSPA`†, `MutationalPatterns`, `MuSiCal`, `SigID`†, `SigTrim`†,
+`sigfit`, `mmsig`, `sigminer`, `sigspack`, `yapsa`, `siglasso`, `signature_tools`
 
-`SigID` and `SigTrim` are this workflow's own methods for the unknown-signature problem (see
-[Method Descriptions](#method-descriptions)); the rest are established third-party tools. Neither
-sweeps a penalty grid — both always emit a single `{tool}_contribution.dat` per condition.
+† Not runnable yet — repo not public, see the note near the top of this README.
 
-> **Known limitation on Apple Silicon**: `mmsig` and `sigfit` currently don't have a working conda
-> environment on `osx-arm64`. `mmsig` hard-depends on the ~800 MB `BSgenome.Hsapiens.UCSC.hg19` genome
-> data package plus `MutationalPatterns`/`deconstructSigs` transitively; `sigfit` requires compiling a
-> full Stan (`rstan`/`StanHeaders`) toolchain from source, which is slow and fragile on this platform.
-> Both install cleanly on Linux, where bioconda ships native builds for all of their dependencies.
+`SigID` and `SigTrim` are this workflow's own methods for the unknown-signature problem — `SigID`
+models unknown signal via an L1-penalised search, `SigTrim` trims anomalous residual out before
+fitting (see [Method Descriptions](#method-descriptions) for detail); the rest are established
+third-party tools.
+
+> **Known install issues**: some tools' conda environments are more fragile than others,
+> particularly on Apple Silicon (`mmsig`, `sigfit`) — see each tool's `workflow/envs/*.yaml` and
+> `*.post-deploy.sh` for how it's installed. If env creation fails for a tool you need, please
+> [open an issue](https://github.com/mkatsanto/SigFitBench/issues).
 
 Add per-tool overrides (thresholds, penalties, `metric: cosine`/`l2`, etc.) under `tool_overrides` —
-see the blocks already in `config_unknown_0.yaml` for every tool's available knobs.
+see the blocks already in `config_test.yaml` for every tool's available knobs.
 
 ### Data Types
 
@@ -242,14 +259,14 @@ run (each activates a different Snakemake rule):
 |---|---|---|
 | `"synthetic"` | `ms_create_synthetic_catalog` | Samples signature weights from empirical COSMIC tissue distributions (`cosmic_tissue_data/`), then draws mutations via multinomial sampling. |
 | `"realsim"` | `create_realsim_catalog` | Real PCAWG samples for selected cancer types, at their native mutation count — no downsampling, no ground truth; `rep` is always 0. |
-| `"external"` | `prepare_external_catalog` | Brings your own catalog + ground truth via `external_datasets` (see the commented example at the bottom of any config); `rep` is always 0. |
+| `"external"` | `prepare_external_catalog` | Brings your own catalog, no ground truth (see the commented example in `config_mysigmix.yaml`) — every column is fit as its own sample, no per-tissue splitting like `realsim`; `num_muts` and `rep` are always `"none"`/`0`. |
 | `"custom"` | `create_custom_catalog` | Draws from a user-supplied `combinations_file` under `custom_datasets` (see `config_mysigmix.yaml` for a working example) — each sample randomly picks one row (signature mix) from the table. |
 
 For `"realsim"`, cancer types come from `simulation.real_samples.cancer_types` (a separate list from
 the top-level `cancer_types`, since real PCAWG labels don't match the synthetic ones, e.g.
-`Breast-AdenoCA` vs. `Breast`). Since there's no ground truth, `SigID` is skipped for this mode (its
-auto-penalty search requires ground truth as an input), and results are compared via cross-tool
-agreement rather than TAE/Precision/Recall:
+`Breast-AdenoCA` vs. `Breast`). Since there's no ground truth, `SigID` is skipped for this mode even
+once its repo is public (its auto-penalty search requires ground truth as an input), and results are
+compared via cross-tool agreement rather than TAE/Precision/Recall:
 
 ```yaml
 data_types: ["realsim"]
@@ -275,98 +292,40 @@ custom_datasets:
 ## Method Descriptions
 
 Every fitting tool answers the same question — *which COSMIC signatures explain this
-sample's mutation catalog, and how much does each contribute?* `SigID` and `SigTrim`
-— this workflow's own methods, packaged separately at
+sample's mutation catalog, and how much does each contribute?* That question assumes the
+reference catalog is complete. It isn't: COSMIC adds new signatures with nearly every
+release (e.g. v3.4 added SBS96–99 on top of v3.3.1), and any given tumor can carry a
+mutational process that's specific to that patient, study, or not yet catalogued at all.
+When a tool is only allowed to explain a sample using its known reference, any truly
+unmodelled signal has nowhere to go — it gets silently folded into whichever known
+signature(s) look closest, inflating false positives and distorting the true known
+signatures' weights. That's the **unknown-signature problem**, and it's what
+`out_of_reference_sigs`/`out_of_reference_weights` are built to stress-test (see
+[Unknown Signature Testing](#unknown-signature-testing)): specific COSMIC signatures are
+included when generating the synthetic catalog but withheld from the reference every tool
+fits against, so every tool is forced to cope with mutation burden it can't attribute to
+anything it knows about.
+
+The key distinction isn't "does this tool explicitly discover what an unknown signature
+looks like" (only `SigID` does that) — it's "does this tool's algorithm have *any*
+confidence-thresholding or residual-trimming mechanism that lets it refuse to
+force-explain 100% of the signal," versus always fully absorbing unknown signal into
+whichever known signatures look closest. A few tools, packaged separately at
 [github.com/mkatsanto/SigID](https://github.com/mkatsanto/SigID) and
-[github.com/mkatsanto/SigTrim](https://github.com/mkatsanto/SigTrim) — go one step
-further and also try to answer *what if the sample contains a signature that isn't in
-the reference at all?* That's the **unknown-signature problem**, and it's the reason
-these methods exist alongside the third-party tools above.
+[github.com/mkatsanto/SigTrim](https://github.com/mkatsanto/SigTrim), share that kind of
+thinking:
 
-### What is LOO (Leave-One-Out)?
+| Method | Approach |
+|---|---|
+| `SigID` | Models unknown signal directly: an L1-penalised search lets one or more data-driven "unknown" signatures join the active set when they genuinely improve reconstruction. |
+| `SigTrim` | Detects mutation-context channels carrying anomalous residual and trims them out before fitting, so unknown signal can't distort the known-signature weights it reports. |
+| `signature_tools` | `signature.tools.lib::Fit()`'s confidence-based exposure filtering (`giniScaledThreshold`) also refuses to force-explain low-confidence signal — though `scripts/signature_tools.R` discards that "unassigned" row before writing output, so it isn't currently surfaced as its own field. |
+| `sigfit` | Its package supports `fit_extract_signatures()`, which fits known signatures and extracts novel ones simultaneously — but `scripts/sigfit.R` calls plain `fit_signatures()` instead, so this workflow doesn't currently exercise it. |
+| `deconstructSigs` | `whichSignatures()` returns an explicit `unknown` field, but `scripts/deconstructSigs.R` only reads the per-signature weights, not that field. |
 
-Used throughout all methods for signature removal decisions. For a set of N active signatures:
-
-```
-current_fit = metric(x, W_active @ NNLS(W_active, x))
-
-for each sig i in active set:
-    fit NNLS on (active set minus sig i)
-    cost_i = current_fit - metric(x, W_minus_i @ NNLS(W_minus_i, x))
-
-remove the sig with the lowest cost_i if cost_i < threshold
-```
-
-The cost of removing sig i is how much the fit degrades without it. A near-zero cost means another sig is covering for it — strong signal of a false positive or correlated duplicate. LOO is repeated iteratively (one removal per round) because removing one sig changes the NNLS weights of all others.
-
-Metrics used:
-- **cosine**: `dot(x, Wh) / (‖x‖ ‖Wh‖)` — higher is better; drop on removal is the cost.
-- **L2**: `‖x − Wh‖ / ‖x‖` — lower is better; rise on removal is the cost.
-
----
-
-### SPA (`cosmic_fit`) — Reference Algorithm
-
-**No unknowns.** The reference against which `SigID` and `SigTrim` are benchmarked.
-
-1. **NNLS on all signatures** → sparse active set (typically 10–20 non-zero weights). This is the starting point — not all 78.
-2. **Initial backward elimination** (`initial_remove_penalty = 0.05`): LOO cosine loop on the NNLS-sparse set. Remove the sig with the smallest LOO drop if drop < 0.05. Repeat until convergence.
-3. **Add-remove loop** (`add_penalty = 0.05`, `remove_penalty = 0.01`): for each sig not in active set, tentatively add it, run LOO removal at 0.01, score the result. Accept the best candidate only if its improvement > 0.05. Repeat until no candidate clears the bar.
-4. **SBS1/SBS5 protection**: always present, protected from removal at every step.
-5. **Connected family protection** (APOBEC SBS2/13, UV SBS7a–d, POLE SBS10a/b, SBS17a/b): when any family member is active, all are protected.
-6. **Final output**: NNLS weights on the active known set. No SLSQP, no penalty sweep.
-
-**Key design choices:**
-- Starts from NNLS-sparse set (not all sigs simultaneously) → LOO costs are honest from the start.
-- `add_penalty (0.05) >> remove_penalty (0.01)` → hysteresis gap. Prevents oscillation at the boundary.
-
----
-
-### SigTrim — unassigned-mutation trimming
-
-**Objective**: standard NNLS, but with out-of-reference signal trimmed out first rather than modelled.
-
-**Steps:**
-
-1. **Z-score channel trimming**: fit NNLS, compute each channel's unassigned residual, and
-   trim the excess from any channel whose residual z-score exceeds `zscore_threshold` —
-   these channels likely carry out-of-reference signal that would distort the
-   known-signature fit. Refit and repeat until no anomalous channels remain.
-2. **Coarse pre-filter** (`initial_remove_penalty`): a backward-elimination pass on the
-   trimmed counts before the main loop.
-3. **SPA-style greedy add/remove loop** (`thresh_forward` / `thresh_backward`, L2
-   distance): layer by layer, add whichever candidate known signature helps most, then
-   prune whichever hurts least, until no improving move remains.
-4. **Background-signature protection**: SBS1/SBS5 (configurable) are never removed.
-5. **Final NNLS fit** on the surviving signature set over the (trimmed) counts.
-
-SigTrim doesn't emit an explicit "unknown signature" — it keeps unexplained signal from
-distorting the known-signature fit by trimming it out rather than modelling it directly.
-
----
-
-### SigID — automatic per-sample unknown discovery
-
-**Objective**: known-signature fit via the same SPA-style greedy add/remove logic as
-SigTrim, plus an L1-penalised fit that lets one or more discovered "unknown" signatures
-join the active set when they genuinely improve reconstruction.
-
-**Steps:**
-
-1. **Greedy known-signature selection**: the same layered add/backward-eliminate loop as SigTrim, run on the known (COSMIC) signature set.
-2. **Unknown-signature discovery**: an L1-penalised fit that lets candidate unknown signatures enter the active set alongside the known ones.
-3. **Per-sample penalty selection**: rather than one fixed L1 penalty applied to every sample — too weak and noise gets mistaken for a novel signature, too strong and genuine novel signal is suppressed — SigID sweeps a grid of penalty values (`min_penalty`–`max_penalty`) and picks the *knee* of the reconstruction-error-vs-penalty curve (the point of maximum curvature, via a robustly-fit sigmoid), falling back to a threshold rule if the curve can't be fit reliably. Each sample gets its own data-driven cutoff instead of a single global guess.
-4. **Final output**: known + discovered-unknown signature weights at that sample's selected penalty.
-
----
-
-### At a Glance
-
-| Method | Unknowns modelled | Approach |
-|---|---|---|
-| SPA | ✗ | Reference algorithm — SigID and SigTrim are benchmarked against it |
-| SigTrim | ✗ (trimmed, not modelled) | Z-score channel trimming + SPA-style greedy add/remove |
-| SigID | ✓ (L1 penalty) | SPA-style greedy add/remove + per-sample auto-selected L1 penalty for unknown discovery |
+Everything else (`SPA`, `MutationalPatterns`, `MuSiCal` ) fits purely against the
+known reference with no such mechanism, so any out-of-reference mutation burden gets
+silently absorbed rather than flagged.
 
 ---
 
@@ -381,8 +340,7 @@ join the active set when they genuinely improve reconstruction.
 │       └── {relevance}/
 │           └── {num_muts}/
 │               └── rep_{rep}/
-│                   ├── {tool}_contribution.dat          # Fitted signature weights
-│                   └── {tool}_contribution_penalty_{p}.dat  # Penalty sweep tools
+│                   └── {tool}_contribution.dat          # Fitted signature weights
 │
 ├── evaluation/                             # Per-run evaluation files
 │   └── *_per_sample.tsv
@@ -390,10 +348,8 @@ join the active set when they genuinely improve reconstruction.
 ├── generated_data/                         # Synthetic catalogs and ground truth
 │
 ├── all_evaluation_metrics.tsv              # Aggregated metrics across all tools and conditions
-├── all_per_sample_metrics.tsv             # Per-sample metrics with features
-├── sigfitbench_report.html                # Interactive HTML report (main output)
-├── penalty_analysis_report.html           # TAE vs penalty sweep report
-└── workflow_complete.txt                  # Written when workflow finishes successfully
+├── all_per_sample_metrics.tsv              # Per-sample metrics with features
+└── sigfitbench_report.html                 # Interactive HTML report (main output)
 ```
 
 ### Key Metrics
@@ -415,11 +371,21 @@ open {output_dir}/sigfitbench_report.html        # macOS
 xdg-open {output_dir}/sigfitbench_report.html    # Linux
 ```
 
-The report contains:
-- **Tool comparison**: precision-recall trade-offs, performance vs mutation burden
-- **Per-sample analysis**: scatter plots per metric
-- **Algorithm stability**: box plots of metric distributions
-- **Penalty analysis**: TAE vs penalty value for penalty sweep tools
+A quick-stats strip and short orientation guide sit at the top; full methodology, parameter
+tables, and metric definitions live in the Appendix at the end. One tab per cancer type
+contains:
+
+- **Tool comparison**: precision-recall trade-offs and performance metrics vs. mutation burden
+- **Performance distribution per tool**: violin/strip plots of the metric spread across samples
+- **Sample-by-sample comparison**: which samples are hard for every tool at once (a ranked
+  "hardest samples" summary, related to signature spectral complexity, once a cancer type has
+  more than 10 samples per condition)
+- **Signature complexity vs. performance**: shown only when the run includes unknown
+  (out-of-reference) signatures
+- **Signature activity per sample**: ground-truth vs. predicted per-signature activity for one
+  sample at a time
+
+An **Aggregate Analysis** tab pools these views across all cancer types.
 
 ---
 
@@ -441,7 +407,7 @@ snakemake --snakefile workflow/Snakefile --configfile config/config_test.yaml \
 
 ### Workflow Visualisation
 
-![Rule graph](docs/rulegraph.svg)
+Generate a diagram of the workflow's rule graph or full DAG with `graphviz`'s `dot`:
 
 ```bash
 snakemake --snakefile workflow/Snakefile --configfile config/config_test.yaml \
@@ -449,6 +415,15 @@ snakemake --snakefile workflow/Snakefile --configfile config/config_test.yaml \
 
 snakemake --snakefile workflow/Snakefile --configfile config/config_test.yaml \
   --rulegraph | dot -Tpdf > workflow_rules.pdf
+```
+
+`profiles/graphs` bundles the flags these need (`dryrun: true`, `printshellcmds: true`, and the
+`snakefile:` path) into a reusable profile, so you don't have to pass `--snakefile`/`--dry-run`
+yourself:
+
+```bash
+snakemake --profile profiles/graphs --configfile config/config_test.yaml \
+  --dag | dot -Tpdf > workflow_dag.pdf
 ```
 
 ### Two-Pass Relevant Signature Detection
@@ -472,22 +447,6 @@ Simulate scenarios where tools lack some active signatures:
 out_of_reference_sigs: ["SBS86", "SBS90", "SBS92"]
 out_of_reference_weights: [0.1, 0.2]   # 10% and 20% of mutations from unknowns
 ```
-
-### Bootstrap Fit-Quality Assessment (under development)
-
-Independently of ground-truth comparison, validate each tool's fit by resampling mutations from its
-own reconstructed catalog and refitting `num_bootstrap` times, then comparing reconstruction-metric
-distributions against the original fit (`assess_fit_quality_bootstrap` rule → `*_bootstrap_quality.tsv`,
-aggregated into `all_bootstrap_quality.tsv`). This feature is still under development:
-
-```yaml
-evaluation:
-  run_bootstrap_quality: true   # computationally intensive — off by default
-  num_bootstrap: 100            # 50 for testing, 100 standard, 1000 for publication
-```
-
-Only applies to non-penalty-sweep tools (tools in `penalty_tools` are skipped, since they don't have
-a single `{tool}_contribution.dat`).
 
 ---
 
@@ -537,6 +496,7 @@ ls cosmic_tissue_data/signature_contributions_WGS_*.dat
 
 - **Issues**: [GitHub Issues](https://github.com/mkatsanto/SigFitBench/issues)
 - **Original Paper**: [Medo et al., 2024](https://doi.org/10.1038/s41467-024-53711-6)
+- **Contact**: maria.katsantoni@unibe.ch, matus.medo@unibe.ch, qixuan.wang@unibe.ch
 
 ---
 
@@ -587,10 +547,10 @@ This workflow benchmarks the following tools — please also cite whichever ones
 | `sigspack` | Schumann, F., Blanc, E., Messerschmidt, C. et al. SigsPack, a package for cancer mutational signatures. *BMC Bioinformatics* 20, 450 (2019). [doi:10.1186/s12859-019-3043-7](https://doi.org/10.1186/s12859-019-3043-7) |
 | `yapsa` | Hübschmann, D., Jopp-Saile, L. et al. Analysis of mutational signatures with yet another package for signature analysis. *Genes Chromosomes Cancer* 60, 314–331 (2021). [doi:10.1002/gcc.22918](https://doi.org/10.1002/gcc.22918) |
 
-`SigID` and `SigTrim` are original to this workflow (see [Method Descriptions](#method-descriptions)) and don't need a separate citation beyond the SigFitTest paper above.
+`SigID` and `SigTrim` as well as `FSPA`  are original to this workflow (see [Method Descriptions](#method-descriptions)) and they will be published in the future.
 
 ---
 
 ## License
 
-This workflow is distributed under the same license as the original [SigFitTest](https://github.com/8medom/SigFitTest) repository.
+MIT License — see [LICENSE](LICENSE) for the full text.

@@ -42,8 +42,7 @@ rule evaluate_tool_performance:
         )
     params:
         min_contribution=config["evaluation"]["min_contribution"],
-        out_of_reference_sigs=OUT_OF_REF_SIGS_STR,
-        penalty_arg=""
+        out_of_reference_sigs=OUT_OF_REF_SIGS_STR
     log:
         stderr=os.path.join(config["log_dir"], "evaluation_{data_type}_{cancer_type}_{num_muts}_{relevance}_{tool}_w{rep}.stderr.log"),
         stdout=os.path.join(config["log_dir"], "evaluation_{data_type}_{cancer_type}_{num_muts}_{relevance}_{tool}_w{rep}.stdout.log")
@@ -65,37 +64,8 @@ rule evaluate_tool_performance:
         --realization {wildcards.rep} \
         --cancer-type {wildcards.cancer_type} \
         --data-type {wildcards.data_type} \
-        --out-of-reference-sigs {params.out_of_reference_sigs} \
-        {params.penalty_arg}) \
+        --out-of-reference-sigs {params.out_of_reference_sigs}) \
         > {log.stdout} 2> {log.stderr}"
-
-
-use rule evaluate_tool_performance as evaluate_penalty_method_performance with:
-    input:
-        tool_results=os.path.join(
-            config['output_dir'],
-            "{data_type}", "{cancer_type}", "{relevance}", "{num_muts}", "rep_{rep}",
-            "{tool}_contribution_penalty_{penalty}.dat"
-        ),
-        true_weights=lambda wildcards: os.path.join(
-            config['output_dir'], "generated_data", wildcards.data_type,
-            f"weights_{wildcards.cancer_type}-w_{'0' if wildcards.data_type == 'realsim' else wildcards.rep}-{wildcards.num_muts}.dat"
-        ),
-        reference_signatures=lambda wildcards: get_cosmic_signatures(wildcards.tool, wildcards.relevance),
-        cosmic_file=config['cosmic_signatures']['base_file'],
-        script=os.path.join(workflow.basedir, "..", "scripts", "evaluate_tool_performance.py")
-    output:
-        per_sample_metrics=os.path.join(
-            config['output_dir'], "evaluation",
-            "{data_type}_{cancer_type}_{num_muts}_{relevance}_{tool}_penalty_{penalty}_w{rep}_per_sample.tsv"
-        )
-    params:
-        min_contribution=config["evaluation"]["min_contribution"],
-        out_of_reference_sigs=OUT_OF_REF_SIGS_STR,
-        penalty_arg=lambda wildcards: f"--penalty-value {wildcards.penalty}"
-    log:
-        stderr=os.path.join(config["log_dir"], "evaluation_{data_type}_{cancer_type}_{num_muts}_{relevance}_{tool}_penalty_{penalty}_w{rep}.stderr.log"),
-        stdout=os.path.join(config["log_dir"], "evaluation_{data_type}_{cancer_type}_{num_muts}_{relevance}_{tool}_penalty_{penalty}_w{rep}.stdout.log")
 
 
 rule assess_fit_quality_bootstrap:
@@ -208,7 +178,7 @@ rule aggregate_bootstrap_quality:
             cancer_type=config["cancer_types"],
             num_muts=config["num_muts"],
             relevance=config["relevance_modes"],
-            tool=[t for t in get_selected_tools() if not has_penalty_sweep(t)],
+            tool=get_selected_tools(),
             rep=range(config["num_realizations"])
         ) if config.get("evaluation", {}).get("run_bootstrap_quality", False) else [],
         script=os.path.join(workflow.basedir, "..", "scripts", "aggregate_bootstrap_quality.py")
@@ -248,11 +218,24 @@ rule evaluate_tool_agreement:
             num_muts=wildcards.num_muts,
             tool=get_agreement_tools()
         ),
+        original_catalog=lambda wildcards: get_input_data(get_agreement_tools()[0], wildcards),
         script=os.path.join(workflow.basedir, "..", "scripts", "evaluate_tool_agreement.py")
     output:
-        os.path.join(
+        pairwise=os.path.join(
             config['output_dir'], "evaluation",
             "{data_type}_{cancer_type}_{num_muts}_{relevance}_tool_agreement.tsv"
+        ),
+        signature_calls=os.path.join(
+            config['output_dir'], "evaluation",
+            "{data_type}_{cancer_type}_{num_muts}_{relevance}_signature_calls.tsv"
+        ),
+        sample_activity=os.path.join(
+            config['output_dir'], "evaluation",
+            "{data_type}_{cancer_type}_{num_muts}_{relevance}_sample_activity.tsv"
+        ),
+        signature_weights=os.path.join(
+            config['output_dir'], "evaluation",
+            "{data_type}_{cancer_type}_{num_muts}_{relevance}_signature_weights.tsv"
         )
     params:
         tools=get_agreement_tools(),
@@ -274,7 +257,11 @@ rule evaluate_tool_agreement:
         --cancer-type {wildcards.cancer_type} \
         --relevance {wildcards.relevance} \
         --num-muts {wildcards.num_muts} \
-        --output {output}) > {log.stdout} 2> {log.stderr}"
+        --output {output.pairwise} \
+        --output-signature-calls {output.signature_calls} \
+        --output-sample-activity {output.sample_activity} \
+        --output-signature-weights {output.signature_weights} \
+        --original-catalog {input.original_catalog}) > {log.stdout} 2> {log.stderr}"
 
 
 rule aggregate_tool_agreement:
@@ -296,6 +283,111 @@ rule aggregate_tool_agreement:
         "(python '{input.script}' \
         --input-files {input.agreement_files} \
         --output {output}) > {log.stdout} 2> {log.stderr}"
+
+
+rule aggregate_signature_calls:
+    """Combine per-cell signature-call-consensus TSVs (which tools call which
+    signatures active, and how often) into one table — same generic concat
+    script as aggregate_tool_agreement, just a different input/output pair."""
+    input:
+        agreement_files=get_agreement_files("signature_calls"),
+        script=os.path.join(workflow.basedir, "..", "scripts", "aggregate_tool_agreement.py")
+    output:
+        os.path.join(config['output_dir'], "all_signature_calls.tsv")
+    log:
+        stderr=os.path.join(config["log_dir"], "aggregate_signature_calls.stderr.log"),
+        stdout=os.path.join(config["log_dir"], "aggregate_signature_calls.stdout.log")
+    conda:
+        os.path.join(workflow.basedir, "envs", "python.yaml")
+    threads: 1
+    resources:
+        mem_mb=lambda wildcards, attempt: 2000 * attempt,
+    shell:
+        "(python '{input.script}' \
+        --input-files {input.agreement_files} \
+        --output {output}) > {log.stdout} 2> {log.stderr}"
+
+
+rule aggregate_sample_activity:
+    """Combine per-cell (sample, tool) mutation-burden / active-signature-count
+    TSVs into one table — same generic concat script as aggregate_tool_agreement."""
+    input:
+        agreement_files=get_agreement_files("sample_activity"),
+        script=os.path.join(workflow.basedir, "..", "scripts", "aggregate_tool_agreement.py")
+    output:
+        os.path.join(config['output_dir'], "all_sample_activity.tsv")
+    log:
+        stderr=os.path.join(config["log_dir"], "aggregate_sample_activity.stderr.log"),
+        stdout=os.path.join(config["log_dir"], "aggregate_sample_activity.stdout.log")
+    conda:
+        os.path.join(workflow.basedir, "envs", "python.yaml")
+    threads: 1
+    resources:
+        mem_mb=lambda wildcards, attempt: 2000 * attempt,
+    shell:
+        "(python '{input.script}' \
+        --input-files {input.agreement_files} \
+        --output {output}) > {log.stdout} 2> {log.stderr}"
+
+
+rule aggregate_signature_weights:
+    """Combine per-cell (tool, signature, sample) -> weight TSVs into one table —
+    same generic concat script as aggregate_tool_agreement. This is the raw
+    per-sample data behind the aggregated signature_calls consensus, used to
+    draw per-signature, per-tool boxplots of predicted activity."""
+    input:
+        agreement_files=get_agreement_files("signature_weights"),
+        script=os.path.join(workflow.basedir, "..", "scripts", "aggregate_tool_agreement.py")
+    output:
+        os.path.join(config['output_dir'], "all_signature_weights.tsv")
+    log:
+        stderr=os.path.join(config["log_dir"], "aggregate_signature_weights.stderr.log"),
+        stdout=os.path.join(config["log_dir"], "aggregate_signature_weights.stdout.log")
+    conda:
+        os.path.join(workflow.basedir, "envs", "python.yaml")
+    threads: 1
+    resources:
+        mem_mb=lambda wildcards, attempt: 2000 * attempt,
+    shell:
+        "(python '{input.script}' \
+        --input-files {input.agreement_files} \
+        --output {output}) > {log.stdout} 2> {log.stderr}"
+
+
+rule create_agreement_report:
+    """HTML report for no-ground-truth data (realsim/external): cross-tool
+    agreement heatmaps instead of TAE/Precision/Recall against a known answer.
+    Deliberately separate from create_html_report (the simulation/ground-truth
+    report) — different input, different script, no shared code path beyond
+    importing get_html_template()/get_tool_colors() for a consistent look."""
+    input:
+        tool_agreement=os.path.join(config['output_dir'], "all_tool_agreement.tsv"),
+        signature_calls=os.path.join(config['output_dir'], "all_signature_calls.tsv"),
+        sample_activity=os.path.join(config['output_dir'], "all_sample_activity.tsv"),
+        signature_weights=os.path.join(config['output_dir'], "all_signature_weights.tsv"),
+        script=os.path.join(workflow.basedir, "..", "scripts", "create_agreement_report.py")
+    output:
+        os.path.join(config['output_dir'], "sigfitbench_agreement_report.html")
+    params:
+        title="SigFitBench Cross-Tool Agreement Report",
+        subtitle="No-ground-truth comparison (realsim / external)"
+    log:
+        stderr=os.path.join(config["log_dir"], "agreement_report.stderr.log"),
+        stdout=os.path.join(config["log_dir"], "agreement_report.stdout.log")
+    conda:
+        os.path.join(workflow.basedir, "envs", "python.yaml")
+    threads: 1
+    resources:
+        mem_mb=lambda wildcards, attempt: 2000 * attempt,
+    shell:
+        "(python '{input.script}' \
+        --tool-agreement {input.tool_agreement} \
+        --signature-calls {input.signature_calls} \
+        --sample-activity {input.sample_activity} \
+        --signature-weights {input.signature_weights} \
+        --output {output} \
+        --title '{params.title}' \
+        --subtitle '{params.subtitle}') > {log.stdout} 2> {log.stderr}"
 
 
 # ==============================================================================

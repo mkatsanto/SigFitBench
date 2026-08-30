@@ -5,7 +5,8 @@ sink(file(snakemake@log[["stdout"]], open="wt"), type="output")
 sink(file(snakemake@log[["stderr"]], open="wt"), type="message")
 
 mut_mat <- as.matrix(read.csv(snakemake@input[["data"]], sep="\t", row.names=1, header=TRUE))
-cosmic3 <- as.matrix(read.table(snakemake@input[["cosmic"]], sep=",", header=TRUE, check.names=FALSE))
+cosmic3 <- as.matrix(read.table(snakemake@input[["cosmic"]], sep=",", row.names=1, header=TRUE, check.names=FALSE))
+mut_mat <- mut_mat[rownames(cosmic3), , drop = FALSE]
 
 # Reimplementation of YAPSA::LCD(), which just loops lsei() over samples with
 # G = identity / H = 0 (i.e. plain non-negative least squares) -- avoided

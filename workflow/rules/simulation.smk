@@ -121,12 +121,21 @@ rule prepare_external_catalog:
     """Prepare external mutational catalog for fitting tools.
 
     Only a mutation-channel catalog is required (contexts × samples) — no ground
-    truth, just like realsim. external_datasets[{cancer_type}]["catalog"] is the
-    only mandatory key. rep is always 0. Evaluated via cross-tool agreement, same
-    as realsim, since there's no ground truth to compare against.
+    truth, just like realsim. external_datasets[{ds_name}]["catalog"] is the only
+    key needed. The {cancer_type} wildcard is resolved back to its source dataset
+    (and, if that catalog uses the "Tissue::SampleID" column convention, the tissue
+    to filter to) via resolve_external_dataset() — see get_external_cancer_types()
+    in common.smk for the auto-detection logic; catalogs without that convention are
+    fit as one flat dataset named after the dataset key, unchanged from before.
+    num_muts and rep are always "none"/0 in the output path (like realsim, external
+    has no per-sample target mutation count or independent realizations, so both are
+    fixed structural placeholders in the shared
+    {data_type}/{cancer_type}/{relevance}/{num_muts}/rep_{rep}/ output layout every
+    tool rule uses, not configurable fields). Evaluated via cross-tool agreement,
+    same as realsim, since there's no ground truth to compare against.
     """
     input:
-        catalog=lambda wildcards: config["external_datasets"][wildcards.cancer_type]["catalog"],
+        catalog=lambda wildcards: config["external_datasets"][resolve_external_dataset(wildcards.cancer_type)[0]]["catalog"],
         script=os.path.join(workflow.basedir, "..", "scripts", "fit_external_catalog.py")
     output:
         data_files=expand(
@@ -137,7 +146,11 @@ rule prepare_external_catalog:
     params:
         output_formats=get_required_output_formats(),
         matrix_order=config["matrix_order"],
-        num_muts_label=lambda wildcards: wildcards.num_muts
+        num_muts_label=lambda wildcards: wildcards.num_muts,
+        tissue_arg=lambda wildcards: (
+            f"--tissue-prefix '{resolve_external_dataset(wildcards.cancer_type)[1]}'"
+            if resolve_external_dataset(wildcards.cancer_type)[1] else ""
+        )
     conda:
         os.path.join(workflow.basedir, "envs", "python.yaml")
     threads: 1
@@ -153,7 +166,8 @@ rule prepare_external_catalog:
         --output-dir {config[output_dir]}/generated_data/external \
         --output-formats {params.output_formats} \
         --matrix-order {params.matrix_order} \
-        --num-muts-label {params.num_muts_label}) > {log.stdout} 2> {log.stderr}"
+        --num-muts-label {params.num_muts_label} \
+        {params.tissue_arg}) > {log.stdout} 2> {log.stderr}"
 
 
 rule create_custom_catalog:

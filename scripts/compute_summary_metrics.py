@@ -4,7 +4,7 @@ Concatenate per-sample evaluation TSVs and derive per-run summary statistics.
 
 Reads all individual per-sample TSVs produced by evaluate_tool_performance,
 concatenates them into all_per_sample_metrics.tsv, then groups by
-(cancer_type, data_type, tool, penalty, replicate, num_muts) to compute
+(cancer_type, data_type, tool, replicate, num_muts) to compute
 aggregate statistics across samples in each run.
 
 Usage:
@@ -42,7 +42,7 @@ def compute_summary(input_files: list, per_sample_output: str, output_file: str)
     df.to_csv(per_sample_path, sep='\t', index=False)
     print(f"Per-sample metrics written to {per_sample_output}")
 
-    group_cols = ['cancer_type', 'data_type', 'tool', 'penalty', 'replicate', 'num_muts']
+    group_cols = ['cancer_type', 'data_type', 'tool', 'replicate', 'num_muts']
     agg = df.groupby(group_cols, dropna=False).agg(
         num_samples=('sample', 'count'),
         mean_num_muts=('num_muts', 'first'),

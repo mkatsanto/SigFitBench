@@ -6,6 +6,7 @@ sink(file(snakemake@log[["stderr"]], open="wt"), type="message")
 
 cosmic3 <- as.matrix(read.table(snakemake@input[["cosmic"]], sep="\t", header=TRUE, row.names=1, check.names=FALSE))
 mut_mat <- read.csv(snakemake@input[["data"]], sep="\t", row.names=1, header=TRUE)
+mut_mat <- mut_mat[rownames(cosmic3), , drop = FALSE]
 
 if (snakemake@params[["strict"]]) {
   res <- fit_to_signatures_strict(mut_mat + 0.0001, cosmic3)

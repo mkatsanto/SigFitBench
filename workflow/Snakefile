@@ -67,7 +67,6 @@ rule all:
     """
     input:
         # Tool fitting outputs (data generation + tool execution)
-        # Exclude methods with penalty sweeps - they create penalty-specific files
         tool_results = expand(
             os.path.join(
                 config['output_dir'],
@@ -82,29 +81,9 @@ rule all:
             cancer_type=config.get("cancer_types", ["Head-SCC"]),
             identifier=config["num_muts"],
             relevance=config.get("relevance_modes", ["standard", "relevant"]),
-            tool=[t for t in get_selected_tools() if not has_penalty_sweep(t)],
+            tool=get_selected_tools(),
             rep=range(config.get("num_realizations", 1))
         ),
-        # Penalty method outputs (with penalty-specific files)
-        penalty_results = [
-            os.path.join(
-                config['output_dir'],
-                data_type,
-                cancer_type,
-                relevance,
-                str(num_muts),
-                f"rep_{rep}",
-                f"{tool}_contribution_penalty_{penalty}.dat"
-            )
-            for data_type in active_data_types
-            for cancer_type in config.get("cancer_types", ["Head-SCC"])
-            for relevance in config.get("relevance_modes", ["standard", "relevant"])
-            for num_muts in config["num_muts"]
-            for rep in range(config.get("num_realizations", 1))
-            for tool in get_selected_tools()
-            if has_penalty_sweep(tool)
-            for penalty in get_penalty_values(tool)
-        ],
         # Custom fixed-weights tool results (data_type == "custom")
         custom_tool_results = [
             os.path.join(
@@ -117,48 +96,17 @@ rule all:
             for num_muts in config["num_muts"]
             for rep in range(config.get("num_realizations", 1))
             for tool in get_selected_tools()
-            if not has_penalty_sweep(tool)
         ] if "custom" in config.get("data_types", []) else [],
-        custom_penalty_results = [
+        external_tool_results = expand(
             os.path.join(
-                config['output_dir'], "custom", ds_name,
-                relevance, str(num_muts), f"rep_{rep}",
-                f"{tool}_contribution_penalty_{penalty}.dat"
-            )
-            for ds_name in config.get("custom_datasets", {})
-            for relevance in config.get("relevance_modes", ["standard"])
-            for num_muts in config["num_muts"]
-            for rep in range(config.get("num_realizations", 1))
-            for tool in get_selected_tools()
-            if has_penalty_sweep(tool)
-            for penalty in get_penalty_values(tool)
-        ] if "custom" in config.get("data_types", []) else [],
-        # External catalog tool results (data_type == "external", rep always 0)
-        external_tool_results = [
-            os.path.join(
-                config['output_dir'], "external", ds_name,
-                relevance, str(ds["num_muts_label"]), "rep_0",
-                f"{tool}_contribution.dat"
-            )
-            for ds_name, ds in config.get("external_datasets", {}).items()
-            for relevance in config.get("relevance_modes", ["standard"])
-            for tool in get_selected_tools()
-            if not has_penalty_sweep(tool)
-        ] if "external" in config.get("data_types", []) else [],
-        external_penalty_results = [
-            os.path.join(
-                config['output_dir'], "external", ds_name,
-                relevance, str(ds["num_muts_label"]), "rep_0",
-                f"{tool}_contribution_penalty_{penalty}.dat"
-            )
-            for ds_name, ds in config.get("external_datasets", {}).items()
-            for relevance in config.get("relevance_modes", ["standard"])
-            for tool in get_selected_tools()
-            if has_penalty_sweep(tool)
-            for penalty in get_penalty_values(tool)
-        ] if "external" in config.get("data_types", []) else [],
-        # Real-sample tool results (data_type == "realsim", rep always 0, no ground truth
-        # so no true_weights available — SigID's auto-penalty search needs that input and is skipped)
+                config['output_dir'], "external", "{cancer_type}",
+                "{relevance}", "none", "rep_0", "{tool}_contribution.dat"
+            ),
+            cancer_type=get_all_external_cancer_types(),
+            relevance=config.get("relevance_modes", ["standard"]),
+            tool=get_selected_tools(),
+        ) if "external" in config.get("data_types", []) else [],
+        # Real-sample tool results (data_type == "realsim", rep always 0, no ground truth)
         realsim_tool_results = [
             os.path.join(
                 config['output_dir'], "realsim", cancer_type,
@@ -168,14 +116,43 @@ rule all:
             for cancer_type in get_realsim_cancer_types()
             for relevance in config.get("relevance_modes", ["standard"])
             for tool in get_selected_tools()
-            if not has_penalty_sweep(tool)
-            and tool not in ("SigID",)
         ] if "realsim" in config.get("data_types", []) else [],
-        # Single aggregated metrics file for all tools and conditions
-        all_metrics = os.path.join(config['output_dir'], "all_evaluation_metrics.tsv"),
-        # Per-sample metrics file with features (ENP, condition number, KL divergence, etc.)
-        per_sample_metrics = os.path.join(config['output_dir'], "all_per_sample_metrics.tsv"),
-        # Bootstrap quality assessment (optional)
+        # Ground-truth-based summary + report (synthetic/custom only — realsim/external
+        # have no ground truth, so compute_summary_metrics would have nothing to
+        # aggregate and get_eval_files() returns []; only request these when there's
+        # actually ground-truth data to summarize).
+        all_metrics = (
+            os.path.join(config['output_dir'], "all_evaluation_metrics.tsv")
+            if _has_ground_truth_data else []
+        ),
+        per_sample_metrics = (
+            os.path.join(config['output_dir'], "all_per_sample_metrics.tsv")
+            if _has_ground_truth_data else []
+        ),
         bootstrap_quality = os.path.join(config['output_dir'], "all_bootstrap_quality.tsv") if config.get("evaluation", {}).get("run_bootstrap_quality", False) else [],
-        # HTML report (MultiQC-style) - contains all visualizations
-        html_report=os.path.join(config['output_dir'], "sigfitbench_report.html")
+        html_report=(
+            os.path.join(config['output_dir'], "sigfitbench_report.html")
+            if _has_ground_truth_data else []
+        ),
+        # Cross-tool agreement summary + report (realsim/external only — no ground
+        # truth, so tools are compared to each other instead of to a known answer).
+        tool_agreement = (
+            os.path.join(config['output_dir'], "all_tool_agreement.tsv")
+            if _has_no_ground_truth_data else []
+        ),
+        signature_calls = (
+            os.path.join(config['output_dir'], "all_signature_calls.tsv")
+            if _has_no_ground_truth_data else []
+        ),
+        sample_activity = (
+            os.path.join(config['output_dir'], "all_sample_activity.tsv")
+            if _has_no_ground_truth_data else []
+        ),
+        signature_weights = (
+            os.path.join(config['output_dir'], "all_signature_weights.tsv")
+            if _has_no_ground_truth_data else []
+        ),
+        agreement_report = (
+            os.path.join(config['output_dir'], "sigfitbench_agreement_report.html")
+            if _has_no_ground_truth_data else []
+        ),

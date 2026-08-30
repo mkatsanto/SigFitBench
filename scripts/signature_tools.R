@@ -59,12 +59,16 @@ library(dplyr)
 
 mut_mat <- read.csv(opt$data, sep = "\t", row.names = 1, header = TRUE)
 cosmic3 <- as.matrix(read.table(opt$cosmic, sep = "\t", header = TRUE, row.names = 1, check.names = FALSE))
+mut_mat <- mut_mat[rownames(cosmic3), , drop = FALSE]
 
 res <- Fit(catalogues = mut_mat, signatures = cosmic3,
            method = opt$method,
            exposureFilterType = opt$filter_type,
            useBootstrap = TRUE, nboot = opt$nboot, nparallel = opt$nparallel)
+if (ncol(res$exposures) == ncol(mut_mat)) {
+  colnames(res$exposures) <- colnames(mut_mat)
+}
 res_to_save <- t(res$exposures)
-res_to_save <- res_to_save[!(row.names(res_to_save) == "unassigned"), ]
+res_to_save <- res_to_save[!(row.names(res_to_save) == "unassigned"), , drop = FALSE]
 res_to_save <- as.data.frame(res_to_save) %>% mutate_if(is.numeric, round, digits = 4)
 write.csv(res_to_save, file = opt$output)
