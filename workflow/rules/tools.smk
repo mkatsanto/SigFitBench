@@ -737,3 +737,62 @@ rule sigid:
         --initial-remove-penalty {params.initial_remove_penalty} \
         {params.true_weights_arg} \
         --n-jobs {threads}) > {log.stdout} 2> {log.stderr}"
+
+
+rule extended_dm:
+    """
+    Custom-made algorithm where NNLS is run using the reference catalog extended
+    with 96 dummy signatures and a penalty is added for using those dummies.
+    """
+    input:
+        data=lambda wildcards: get_input_data('extended_dm', wildcards),
+        weights=lambda wildcards: get_cosmic_signatures("extended_dm", wildcards.relevance),
+        matrix_order=config["matrix_order"],
+        script=os.path.join(workflow.basedir, "scripts", "extended_dm.py")
+    output:
+        result=os.path.join(
+            config['output_dir'],
+            "{data_type}",
+            "{cancer_type}",
+            "{relevance}",
+            "{num_muts}",
+            "rep_{rep}",
+            "extended_dm_contribution.dat"
+        )
+    params:
+        init_sig_rem_thr=get_tool_config("extended_dm")["init_sig_rem_thr"],
+        thresh_backward=get_tool_config("extended_dm")["thresh_backward"],
+        seed=config.get("random_seed", 0)
+    log:
+        stderr=os.path.join(
+            config["log_dir"],
+            "{data_type}",
+            "{cancer_type}",
+            "{relevance}",
+            "{num_muts}",
+            "rep_{rep}",
+            "extended_dm_stderr.log"
+        ),
+        stdout=os.path.join(
+            config["log_dir"],
+            "{data_type}",
+            "{cancer_type}",
+            "{relevance}",
+            "{num_muts}",
+            "rep_{rep}",
+            "extended_dm_stdout.log"
+        )
+    conda:
+        os.path.join(workflow.basedir, "envs", "custom_methods.yaml")
+    threads: 1
+    resources:
+        mem_mb=lambda wildcards, attempt: 4000 * attempt,
+    shell:
+        "(python '{input.script}'  \
+        -i {input.data} \
+        -w {input.weights} \
+        -m {input.matrix_order} \
+        -o {output.result} \
+        --init-sig-rem-thr {params.init_sig_rem_thr} \
+        --thresh-backward {params.thresh_backward} \
+        --seed {params.seed}) > {log.stdout} 2> {log.stderr}"
