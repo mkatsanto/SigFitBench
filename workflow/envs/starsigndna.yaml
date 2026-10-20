@@ -1,0 +1,18 @@
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - python=3.11
+  - pip
+  - numpy<2  # StarSignDNA converts 1x1 arrays with float(), which NumPy 2 rejects
+  - pandas
+  - scipy
+  - scikit-learn
+  - matplotlib
+  - seaborn
+  - typer
+  - typing_extensions
+  - requests
+  - bionumpy
+  - pip:
+    - starsigndna==1.0.5

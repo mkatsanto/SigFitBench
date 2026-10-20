@@ -1,4 +1,3 @@
----
 channels:
   - conda-forge
   - bioconda
@@ -9,7 +8,3 @@ dependencies:
   - pip
   - pip:
     - git+ssh://git@github.com/sirenfrappe/FSPA.git@FSPA
-...
-
-
-

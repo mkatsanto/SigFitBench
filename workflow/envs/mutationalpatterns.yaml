@@ -1,10 +1,8 @@
----
 channels:
   - conda-forge
   - bioconda
   - defaults
 channel_priority: strict
-
 dependencies:
   - r-base>=4.0
   - r-cowplot>=0.9.2
@@ -20,25 +18,18 @@ dependencies:
   - r-tibble>=2.1.3
   - r-tidyr>=1.0.0
   - r-optparse
-  # explicit BLAS/LAPACK provider: without pinning this, conda can solve an
-  # env where R's own stats.so links against libblas.3.dylib but nothing
-  # actually ships it, breaking every R invocation at runtime
+  # Without pinning these, conda can solve an env where R's stats.so links
+  # against libblas.3.dylib but nothing ships it, breaking every R call.
   - libblas
   - liblapack
-  # bioconductor-mutationalpatterns itself is installed by
-  # mutationalpatterns.post-deploy.sh after this env is created (see that
-  # script for why). r-remotes/r-biocmanager are here for that step to use.
+  # bioconductor-mutationalpatterns and NMF (no osx-arm64 conda build for
+  # either) are installed from source by mutationalpatterns.post-deploy.sh;
+  # r-remotes/r-biocmanager/compilers are for that step.
   - r-remotes
   - r-biocmanager
-  # compiler toolchain, needed by the post-deploy step to build NMF from
-  # source (no osx-arm64 conda binary for r-nmf)
   - compilers
-  # MutationalPatterns' remaining Imports (from its DESCRIPTION), installed
-  # via conda so only the package itself (and NMF) need to come from
-  # Bioconductor/CRAN directly in post-deploy.sh.
-  # NB: r-nmf is deliberately NOT listed here -- conda-forge has no
-  # osx-arm64 build for it, only osx-64/linux/win. It's compiled from CRAN
-  # source instead, in mutationalpatterns.post-deploy.sh.
+  # MutationalPatterns' remaining Imports, installed via conda so only the
+  # package itself (and NMF) need to be built in post-deploy.sh.
   - bioconductor-biocgenerics
   - bioconductor-bsgenome
   - bioconductor-variantannotation
@@ -46,4 +37,3 @@ dependencies:
   - bioconductor-genomeinfodb
   - bioconductor-biostrings
   - bioconductor-genomicranges
-...

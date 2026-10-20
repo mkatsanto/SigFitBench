@@ -1,7 +1,7 @@
----
 channels:
   - conda-forge
   - bioconda
+channel_priority: strict
 dependencies:
   - r-base>=4.0
   - r-dplyr
@@ -12,4 +12,3 @@ dependencies:
 # and KEGGREST are also unrelated to what this script uses). YAPSA.R calls
 # limSolve::lsei directly instead -- that's all YAPSA's own LCD() does
 # internally, so the result is numerically identical.
-...

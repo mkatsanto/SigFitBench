@@ -28,6 +28,10 @@
 set -euo pipefail
 
 "$CONDA_PREFIX/bin/Rscript" --vanilla -e '
+  # BSgenome.Hsapiens.* genome data packages are large (hundreds of MB) and
+  # Rs default 60s download.file() timeout is too short for a slow mirror.
+  # 600s gives a slow connection a real chance to finish.
+  options(timeout = 600)
   remotes::install_cran("NMF", upgrade = "never")
   remotes::install_github("linxihui/NNLM", upgrade = "never")
   remotes::install_github("Nik-Zainal-Group/indelsig.tools.lib", upgrade = "never")

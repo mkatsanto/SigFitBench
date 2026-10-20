@@ -1,4 +1,3 @@
----
 channels:
   - conda-forge
   - bioconda
@@ -7,27 +6,18 @@ dependencies:
   - r-base>=4.0
   - r-dplyr
   - r-optparse
-  # explicit BLAS/LAPACK provider: without pinning this, conda can solve an
-  # env where R's own stats.so links against libblas.3.dylib but nothing
-  # actually ships it, breaking every R invocation at runtime
+  # Without pinning these, conda can solve an env where R's stats.so links
+  # against libblas.3.dylib but nothing ships it, breaking every R call.
   - libblas
   - liblapack
-  # mmsig itself, and its hard Imports MutationalPatterns and NMF (neither
-  # has a working osx-arm64 conda/bioconda build), are installed by
-  # mmsig.post-deploy.sh after this env is created (see that script for
-  # why). r-remotes/r-biocmanager are here for that step to use.
+  # mmsig, MutationalPatterns, and NMF (no osx-arm64 conda build for any of
+  # the three) are installed from source by mmsig.post-deploy.sh;
+  # r-remotes/r-biocmanager/compilers are for that step.
   - r-remotes
   - r-biocmanager
-  # compiler toolchain, needed by the post-deploy step to build NMF from
-  # source (no osx-arm64 conda binary for r-nmf)
   - compilers
-  # mmsig's remaining Imports (from its DESCRIPTION), installed via conda so
-  # only mmsig itself (and MutationalPatterns/NMF) need to come from
-  # GitHub/Bioconductor directly in post-deploy.sh.
-  # NB: r-nmf is deliberately NOT listed here -- conda-forge has no
-  # osx-arm64 build for it, only osx-64/linux/win. It's compiled from CRAN
-  # source instead, in mmsig.post-deploy.sh (needed transitively via
-  # MutationalPatterns).
+  # mmsig's remaining Imports, installed via conda so only mmsig itself
+  # (and MutationalPatterns/NMF) need to be built in post-deploy.sh.
   - r-seqinr
   - r-plyr
   - r-tibble
@@ -54,4 +44,3 @@ dependencies:
   - bioconductor-biocgenerics
   - bioconductor-variantannotation
   - bioconductor-biostrings
-...

@@ -1,7 +1,7 @@
----
 channels:
   - conda-forge
   - bioconda
+channel_priority: strict
 dependencies:
   - r-base>=4.0
   - r-dplyr
@@ -16,4 +16,3 @@ dependencies:
   - r-glmnet
   - r-rcolorbrewer
   - r-colorramps
-...

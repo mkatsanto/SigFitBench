@@ -1,0 +1,29 @@
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  # Dependencies of mSigAct; the packages not on conda are installed by msigact.post-deploy.sh
+  - r-base>=4.2
+  - r-remotes
+  - r-rcpp
+  - compilers
+  - r-rcppparallel
+  - r-kernsmooth
+  - r-poorman
+  - r-dplyr
+  - r-tibble
+  - r-gtools
+  - r-nloptr
+  - r-clue
+  - r-quadprog
+  - r-data.table
+  - r-rcolorbrewer
+  - r-stringi
+  - r-zip
+  - r-lifecycle
+  - r-fuzzyjoin
+  - bioconductor-bsgenome
+  - bioconductor-biostrings
+  - bioconductor-genomeinfodb
+  - bioconductor-genomicranges
+  - bioconductor-iranges

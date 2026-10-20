@@ -1,0 +1,13 @@
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - python=3.10
+  - pandas
+  - pysam
+  - pip
+  - pip:
+    # SigVCF is a sibling package in this checkout, not published anywhere --
+    # path is relative to the working directory snakemake is invoked from
+    # (SigFitBench/), not to this env file.
+    - -e ../SigVCF
