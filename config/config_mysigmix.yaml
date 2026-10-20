@@ -9,8 +9,8 @@
 # CORE SETTINGS — always required, regardless of data source
 # ============================================================================
 
-tools_to_run: [ "SPA", "SPA_low", "MuSiCal", "FSPA"]
-
+tools_to_run: [ "SPA", "SPA_low", "MuSiCal",  "siglasso"] #,"SigNoise", "FSPA", "mSigAct",] # "StarSignDNA"] #, "mmsig"]
+ 
 data_types: ["custom", "synthetic"]      # which DATA SOURCE section(s) below are active:
                                           # "synthetic", "realsim", "external", "custom"
                                           # (combine more than one to run several in one config,
@@ -18,9 +18,9 @@ data_types: ["custom", "synthetic"]      # which DATA SOURCE section(s) below ar
 
 relevance_modes: ["standard"]            # "standard", "relevant", or both
 
-output_dir: "results_test"
+output_dir: "results_test1"
 log_dir: "logs_test"
-random_seed: 0
+random_seed: 6
 
 # ============================================================================
 # DATA SOURCE 1/4 — "synthetic": simulate samples from empirical COSMIC tissue
@@ -31,10 +31,10 @@ random_seed: 0
 
 # Available WGS cancer types: Breast, CNS-GBM, ColoRect-AdenoCA, Eso-AdenoCA, Head-SCC,
 #   Liver-HCC, Lung-AdenoCA, Lymph-BNHL, Ovary-AdenoCA, Panc-AdenoCA, Skin-Melanoma, Stomach-AdenoCA
-cancer_types: ["Breast", "Ovary-AdenoCA", "Panc-AdenoCA", "Skin-Melanoma", "Lung-AdenoCA", "Head-SCC"]
+cancer_types: ["Breast", "CNS-GBM", "ColoRect-AdenoCA", "Eso-AdenoCA", "Head-SCC", "Liver-HCC", "Lung-AdenoCA","Lymph-BNHL", "Ovary-AdenoCA", "Panc-AdenoCA", "Skin-Melanoma", "Stomach-AdenoCA"]
 
-num_muts: [200] #, 400, 800, 1600, 3200, 6400, 12800, 50000, 100000, 200000, 500000, 1000000]   # mutations per sample
-num_samples: 2
+num_muts: [200, 500, 1000, 2000, 4000, 8400, 15000, 30000, 50000, 200000, 500000]   # mutations per sample
+num_samples: 100
 num_realizations: 1
 
 # Unknown signatures: excluded from the fitting reference, included in simulation
@@ -71,12 +71,13 @@ out_of_reference_weights: [0]          # fraction of mutations from unknown sigs
 # table of signature-weight combinations (real ground truth, same evaluation
 # path as "synthetic"). Active (data_types above includes it).
 # ============================================================================
-# Each dataset needs a 'combinations_file' (TSV: rows=combinations, cols=signatures);
-# each sample randomly draws one row. See README.md "Data Types" for the file format.
+# Each dataset needs a 'combinations_file' (rows = samples, columns = signatures).
+# Each row becomes one sample. See README.md "Data Types" for the file format.
 
 custom_datasets:
   MySigMix:
     combinations_file: "input/mysigmix/config10.tsv"
+    signature_file: "input/COSMIC_v3.4_SBS_GRCh38.txt"   # optional; default: cosmic_signatures.base_file
 
 # ============================================================================
 # BOILERPLATE — required by the Snakefile regardless of which data source(s)
@@ -103,7 +104,7 @@ relevant_detection:
   consensus_tools: 2
 
 evaluation:
-  min_contribution: 10.0          # min mutations per sample to count a signature "active"
+  min_contribution: 10          # predicted signatures with fewer mutations count as not found
   run_bootstrap_quality: false    # computationally intensive — under development
   num_bootstrap: 1                # 50 testing / 100 standard / 1000 publication
 
@@ -114,8 +115,22 @@ tool_overrides:
     strict: false
   spa:
     output_temp_dir: "temp_spa"
-  fspa:
-    output_temp_dir: "temp_fspa"
+  msigact:
+    max_level: 2                       # remove up to this many signatures at once when testing (higher = slower)
+    p_thresh: 0.05                     # a signature is removed only if the likelihood-ratio test p-value is >= this
+    likelihood: "neg.binom"            # "neg.binom" (mSigAct default) or "multinom"
+    threads: 2                         # cores per job (mSigAct tests signature subsets in parallel)
+  starsigndna:
+    n_iterations: 1000                 # optimisation iterations (StarSignDNA default)
+  signoise:
+    noise_z: 15                        # ADD a signature only if its squared-error drop is >= this x noise per direction (best of ~60 candidates)
+    removal_z: 12                      # KEEP a signature in the model if removing it costs >= this x noise per direction (single test)
+    min_explained_share: 0.1           # ...and it explains >= this share of the non-noise residual
+    background_signatures: ["SBS1", "SBS5"]   # always kept, as in SPA ([] = none)
+    #connected_signatures: true         # add the rest of a group (SBS2/13, SBS7a-d, SBS10a/b, SBS17a/b) if one member is selected, as in SPA
+    weighted_fit: true                 # true = weight each channel by its counting noise (chi-square fit); false = plain L2 fit
+    noise_dispersion: 0           # extra noise per channel = this x expected^2 (0 = counting noise only, no effect)
+    poisson_deviance: true             # with weighted_fit: decide on the Poisson (or negative-binomial) deviance instead of the chi-square
   musical: {}
   sigtrim:
     zscore_threshold: 1.0
@@ -132,7 +147,7 @@ tool_overrides:
 
 tool_formats:
   tab_with_index:
-    tools: ["deconstructsigs", "spa", "spa_low", "fspa"]
+    tools: ["deconstructsigs", "spa", "spa_low", "fspa", "signoise", "msigact", "starsigndna"]
     input_data_base: "data/data_for_deconstructSigs.dat"
     cosmic_signatures:
       standard: "{output_dir}/cosmic_signatures/COSMIC_v3_SBS_GRCh38_tab_with_index.txt"
