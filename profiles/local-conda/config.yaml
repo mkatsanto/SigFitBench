@@ -8,4 +8,3 @@ default-resources: mem_mb=1024
 restart-times: 1
 notemp: false
 no-hooks: true
-verbose: true
