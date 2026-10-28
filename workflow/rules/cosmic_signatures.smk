@@ -14,7 +14,8 @@ import os
 wildcard_constraints:
     format=r"(tab_with_index|csv_no_index|csv_with_index|csv_quoted)",
     data_type=r"(synthetic|realsim)",
-    num_muts=r"(\d+|none)"
+    num_muts=r"(\d+|none)",
+    dataset=r"[A-Za-z0-9_-]+"
 
 
 # ==============================================================================
@@ -23,9 +24,8 @@ wildcard_constraints:
 
 rule cosmic_signatures_by_format:
     """
-    Generate format-specific COSMIC files for FITTING with out-of-reference exclusions.
-    These files are given to tools during fitting and may have some signatures excluded.
-    Simulation uses the base_file directly which has ALL signatures.
+    Signatures the tools can use: base_file minus out_of_reference_sigs.
+    The simulation uses the full base_file.
     """
     input:
         base_cosmic=config.get("cosmic_signatures", {}).get("base_file", "input/COSMIC_v3.4_SBS_GRCh38.txt"),
@@ -37,6 +37,33 @@ rule cosmic_signatures_by_format:
     log:
         stderr=os.path.join(config["log_dir"], "cosmic_signatures_by_format_{format}.stderr.log"),
         stdout=os.path.join(config["log_dir"], "cosmic_signatures_by_format_{format}.stdout.log")
+    conda:
+        os.path.join(workflow.basedir, "envs", "python.yaml")
+    shell:
+        "(python '{input.script}' \
+        -i {input.base_cosmic} \
+        -o {output} \
+        -f {wildcards.format}{params.exclude_sigs}) > {log.stdout} 2> {log.stderr}"
+
+
+rule cosmic_signatures_by_format_custom:
+    """
+    Signatures the tools can use for a custom dataset: the dataset's catalogue minus its
+    own out_of_reference_sigs (none by default).
+    """
+    input:
+        base_cosmic=lambda wildcards: signature_catalogue("custom", wildcards.dataset),
+        script=os.path.join(workflow.basedir, "..", "scripts", "convert_cosmic_format.py")
+    output:
+        os.path.join(config["output_dir"], "cosmic_signatures", "COSMIC_v3_SBS_GRCh38_{format}_CUSTOM_{dataset}.txt")
+    params:
+        exclude_sigs=lambda wc: (
+            " -e '" + ",".join(config["custom_datasets"][wc.dataset].get("out_of_reference_sigs", [])) + "'"
+            if config["custom_datasets"][wc.dataset].get("out_of_reference_sigs") else ""
+        )
+    log:
+        stderr=os.path.join(config["log_dir"], "cosmic_signatures_by_format_custom_{format}_{dataset}.stderr.log"),
+        stdout=os.path.join(config["log_dir"], "cosmic_signatures_by_format_custom_{format}_{dataset}.stdout.log")
     conda:
         os.path.join(workflow.basedir, "envs", "python.yaml")
     shell:
