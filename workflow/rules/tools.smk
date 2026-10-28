@@ -382,11 +382,11 @@ rule sigtrim:
     output:
         result=tool_result("SigTrim", input_format="csv_no_index")
     params:
-        zscore_threshold=get_tool_config("sigtrim")["zscore_threshold"],
-        thresh_backward=get_tool_config("sigtrim")["thresh_backward"],
-        thresh_forward=get_tool_config("sigtrim")["thresh_forward"],
-        initial_remove_penalty=get_tool_config("sigtrim")["initial_remove_penalty"],
-        max_iter=get_tool_config("sigtrim")["max_iter"]
+        zscore_threshold=get_tool_config("sigtrim").get("zscore_threshold", 1.0),
+        thresh_backward=get_tool_config("sigtrim").get("thresh_backward", 0.01),
+        thresh_forward=get_tool_config("sigtrim").get("thresh_forward", 0.01),
+        initial_remove_penalty=get_tool_config("sigtrim").get("initial_remove_penalty", 0.05),
+        max_iter=get_tool_config("sigtrim").get("max_iter", 1000)
     log:
         **tool_logs("SigTrim")
     benchmark:
