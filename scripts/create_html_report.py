@@ -12,6 +12,7 @@ Author: SigFitTest Workflow
 """
 
 import argparse
+import html
 import json
 import os
 import re
@@ -24,6 +25,15 @@ import numpy as np
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
+DEFAULT_MIN_CONTRIBUTION = 10.0  # fallback; must match evaluate_tool_performance.py's default
+
+# Names shown in the report for each data type
+DATA_TYPE_LABELS = {'synthetic': 'Realistic simulations', 'custom': 'Synthetic'}
+DATA_TYPE_NOTES = {
+    'synthetic': 'Signature weights taken from real tumours (PCAWG); mutations drawn from them.',
+    'custom': 'Signature weights from your own table; mutations drawn from them.',
+}
+
 
 # ============================================================================
 # Configuration Classes - Centralize all tool and column configurations
@@ -33,29 +43,29 @@ class ReportMetadata:
     """Centralize all tool colors, symbols, column mappings, and display order."""
     
     def __init__(self):
-        # Tool colors — SigTrim (navy) and SigID (red) are our own tools and are
-        # kept bold/saturated so they stand out; every other (external) tool gets
-        # a pale, muted tone so the plots read as "ours vs. the field" at a glance.
+        # Tool colors: each tool a clearly different hue; our own methods are the darkest
         self.tool_colors = {
-            # our tools — bold, high-contrast
-            'SigTrim':                 '#1B3F8B',  # navy blue
+            # our tools
+            'SigTrim':                 '#1B3F8B',  # navy
             'SigID':                   '#E31A1C',  # red
-            # everything else — pale/muted, still mutually distinguishable
-            'MuSiCal':                 '#9DC3E6',  # pale blue
-            'MuSiCal-FN':              '#B8D4E8',  # paler blue
-            'MuSiCal-BI':              '#D2E4F0',  # palest blue
-            'SPA':                     '#A9D18E',  # pale green
-            'SPA_low':                 '#C2DDA6',  # pale olive-green
-            'FSPA':                    '#DAEACB',  # palest green
-            'deconstructSigs':         '#C9B8E0',  # pale purple
-            'MutationalPatterns':      '#E8B7D4',  # pale pink
-            'sigfit':                  '#E6D28A',  # pale gold
-            'yapsa':                   '#B7B8E0',  # pale periwinkle
-            'sigspack':                '#D9BFA0',  # pale tan
-            'signature_tools':         '#F0C089',  # pale orange
-            'siglasso':                '#C7D2A0',  # pale sage
-            'mmsig':                   '#E8AFC0',  # pale rose
-            'sigminer':                '#B9C4CC',  # pale slate
+            # other tools
+            'SPA':                     '#1F77B4',  # blue
+            'SPA_low':                 '#17BECF',  # cyan
+            'FSPA':                    '#9467BD',  # purple
+            'MuSiCal':                 '#FF7F0E',  # orange
+            'MuSiCal-FN':              '#FFBB78',  # light orange
+            'MuSiCal-BI':              '#C49C94',  # tan
+            'mSigAct':                 '#2CA02C',  # green
+            'StarSignDNA':             '#E377C2',  # pink
+            'siglasso':                '#8C564B',  # brown
+            'deconstructSigs':         '#BCBD22',  # olive
+            'MutationalPatterns':      '#7F7F7F',  # grey
+            'sigfit':                  '#E7BA52',  # gold
+            'yapsa':                   '#AEC7E8',  # light blue
+            'sigspack':                '#FF9896',  # salmon
+            'signature_tools':         '#C5B0D5',  # lavender
+            'mmsig':                   '#7B4173',  # plum
+            'sigminer':                '#393B79',  # indigo
         }
 
         # Base method extraction (for grouping tools by approach)
@@ -840,6 +850,19 @@ def reaggregate_from_per_sample(df_ps):
     return agg
 
 
+def mean_sem(df, group_cols, value_cols):
+    """Group df and return mean, std, count and SEM (std / sqrt(count)) per value column.
+
+    Output columns: <col>_mean, <col>_std, <col>_count, <col>_sem.
+    """
+    out = df.groupby(group_cols)[value_cols].agg(['mean', 'std', 'count'])
+    out.columns = [f'{c}_{stat}' for c, stat in out.columns]
+    out = out.reset_index()
+    for c in value_cols:
+        out[f'{c}_sem'] = out[f'{c}_std'] / np.sqrt(out[f'{c}_count'])
+    return out
+
+
 def load_per_sample_data(tsv_files):
     """
     Load per-sample metrics from TSV file(s).
@@ -880,7 +903,7 @@ def load_per_sample_data(tsv_files):
 # HTML Section Generators
 # ============================================================================
 
-def create_report_intro(df, unknown_sig_config=None):
+def create_report_intro(df, unknown_sig_config=None, tool_overrides=None):
     """Compact orientation block shown right under the header, before the results tabs:
     a row of quick-stat badges plus a short guide to what's in the report and where to
     find it. Keeps readers from having to scroll past a page of background/methodology
@@ -891,6 +914,8 @@ def create_report_intro(df, unknown_sig_config=None):
         df: DataFrame with evaluation metrics
         unknown_sig_config: Optional dict with unknown signature configuration
                           {'num_unknowns': int, 'weights': list}
+        tool_overrides: Optional dict {tool_name: {param: value}} from the config's
+                        `tool_overrides` section (parameters set explicitly for a tool)
     """
     n_tools = df['tool'].nunique()
     cancer_types_list = sorted(df['cancer_type'].unique())
@@ -922,6 +947,21 @@ def create_report_intro(df, unknown_sig_config=None):
         for label, value in badges
     )
 
+    overrides_html = ''
+    if tool_overrides:
+        overrides = {k.lower(): v for k, v in tool_overrides.items() if v}
+        items = []
+        for tool in sorted(df['tool'].unique()):
+            params = overrides.get(str(tool).lower())
+            if params:
+                param_str = ', '.join(f"<code>{k}={v}</code>" for k, v in params.items())
+                items.append(f"<strong>{tool}</strong> ({param_str})")
+        if items:
+            overrides_html = (
+                '<p>Tools run with explicitly specified (non-default) parameters: '
+                + '; '.join(items) + '. All other tools use their default settings.</p>'
+            )
+
     cancer_types_str = ', '.join(cancer_types_list)
     plural = 's' if n_cancer_types != 1 else ''
 
@@ -934,6 +974,7 @@ def create_report_intro(df, unknown_sig_config=None):
                 <strong>known ground truth</strong>, across <strong>{n_cancer_types} cancer type{plural}</strong>
                 ({cancer_types_str}) and mutation burdens from {burden_range}.
             </p>
+            {overrides_html}
             <ul>
                 <li>Each tab below is one cancer type's results: precision/recall, error metrics, tool agreement, and per-sample signature activity.</li>
                 <li>The <strong>Aggregate Analysis</strong> tab pools results across all cancer types.</li>
@@ -960,7 +1001,83 @@ def _derive_cosmic_label(base_file):
     return "COSMIC SBS signatures"
 
 
-def create_appendix_section(df, df_raw=None, unknown_sig_config=None, cosmic_version_label=None):
+def create_resource_usage_section(df_benchmarks, colors):
+    """Wall time and peak memory per tool, from Snakemake's `benchmark:` directive
+    (see tools.smk / aggregate_tool_benchmarks.py). One row of panels per data type; within
+    it, cancer types, relevance modes and replicates are pooled — for each tool and mutation
+    burden, points are the mean over every job run at that burden, with error bars at +-1 std
+    (the spread between jobs, not the uncertainty of the mean). Each job fits a whole
+    sample matrix in one process, so there is no per-sample timing to show spread over.
+    Returns '' if no benchmark data is available.
+    """
+    if df_benchmarks is None or len(df_benchmarks) == 0:
+        return ''
+    if 'seconds' not in df_benchmarks.columns or 'max_rss_mb' not in df_benchmarks.columns:
+        return ''
+
+    tools = get_tool_display_order()
+    tools = [t for t in tools if t in set(df_benchmarks['tool'].unique())] + \
+            sorted(set(df_benchmarks['tool'].unique()) - set(tools))
+    data_types = sorted(df_benchmarks['data_type'].unique())
+
+    agg = mean_sem(df_benchmarks, ['data_type', 'tool', 'num_muts'], ['seconds', 'max_rss_mb'])
+
+    fig = make_subplots(rows=len(data_types), cols=2, horizontal_spacing=0.12,
+                        vertical_spacing=0.12 if len(data_types) > 1 else 0.0,
+                        subplot_titles=[f'{title} — {dt}' if len(data_types) > 1 else title
+                                        for dt in data_types
+                                        for title in ('Wall time', 'Peak memory')])
+    method_symbols = get_method_symbols()
+    for row, data_type in enumerate(data_types, start=1):
+        for tool in tools:
+            tool_data = agg[(agg['data_type'] == data_type) & (agg['tool'] == tool)].sort_values('num_muts')
+            if tool_data.empty:
+                continue
+            symbol = method_symbols.get(get_tool_base_method(tool), 'circle')
+            color = colors.get(tool, '#999')
+            for col, metric, unit in [(1, 'seconds', 's'), (2, 'max_rss_mb', 'MB')]:
+                fig.add_trace(go.Scatter(
+                    x=tool_data['num_muts'], y=tool_data[f'{metric}_mean'], mode='lines+markers',
+                    name=tool, legendgroup=tool, showlegend=(row == 1 and col == 1),
+                    line=dict(color=color, width=2), marker=dict(color=color, size=9, symbol=symbol),
+                    error_y=dict(array=tool_data[f'{metric}_std'].fillna(0), type='data'),
+                    customdata=np.stack([tool_data[f'{metric}_std'].fillna(0),
+                                         tool_data[f'{metric}_count']], axis=-1),
+                    hovertemplate=(f'<b>{tool}</b> ({data_type})<br>%{{x:,}} mutations<br>'
+                                   f'%{{y:.3g}} ± %{{customdata[0]:.2g}} {unit} (std)<br>'
+                                   f'n = %{{customdata[1]}} jobs<extra></extra>'),
+                ), row=row, col=col)
+        fig.update_xaxes(type='log', title_text='Mutations', row=row, col=1)
+        fig.update_xaxes(type='log', title_text='Mutations', row=row, col=2)
+        fig.update_yaxes(title_text='Seconds', row=row, col=1)
+        fig.update_yaxes(title_text='MB (max RSS)', row=row, col=2)
+
+    fig.update_layout(
+        title_text='Resource Usage by Mutation Burden<br><sub>Mean ± std across jobs '
+                   '(cancer types / replicates); hover for n</sub>',
+        height=480 * len(data_types), hovermode='closest', autosize=True,
+    )
+
+    html = '<section id="resources" class="section">\n'
+    html += '<h2>⚡ Resource Usage</h2>\n'
+    html += (
+        '<p style="color:#666; margin-bottom:1rem;">Wall time and peak memory (max RSS) per '
+        'tool, recorded by Snakemake for every fitting job actually run, shown separately per '
+        'data type and pooled across cancer types and replicates. Each job fits one whole '
+        'sample matrix, so error bars (±1 std) show the spread between jobs, not between '
+        'individual samples. Reflects this benchmark\'s hardware and job scheduling '
+        '(local vs. cluster), not each tool\'s theoretical best case.</p>\n'
+    )
+    html += '<div class="plot-container">\n'
+    html += fig.to_html(include_plotlyjs=False, full_html=False, div_id='resource_usage_plot',
+                        config={'responsive': True})
+    html += '</div>\n'
+    html += '</section>\n'
+    return html
+
+
+def create_appendix_section(df, df_raw=None, unknown_sig_config=None, cosmic_version_label=None,
+                             min_contribution=None):
     """Background, full parameter tables, metric reference, and experimental setup —
     reference material shown at the end of the report (see create_report_intro for the
     compact quick-orientation version shown at the top instead).
@@ -972,6 +1089,10 @@ def create_appendix_section(df, df_raw=None, unknown_sig_config=None, cosmic_ver
                           {'num_unknowns': int, 'weights': list}
         cosmic_version_label: Optional human-readable COSMIC catalog label derived
                           from config's cosmic_signatures.base_file
+        min_contribution: Optional float — config's evaluation.min_contribution, the
+                          mutation-count threshold a signature's estimated contribution
+                          must clear to count as "active" for P/R/F1/MCC/FP/FN and for
+                          the Signature Activity widget's predicted markers.
     """
     n_tools = df['tool'].nunique()
     n_cancer_types = df['cancer_type'].nunique()
@@ -1004,6 +1125,8 @@ def create_appendix_section(df, df_raw=None, unknown_sig_config=None, cosmic_ver
     mut_counts_str = ', '.join([f"{int(m):,}" for m in mutation_counts])
 
     data_type = df['data_type'].iloc[0] if 'data_type' in df.columns else 'N/A'
+    data_type_note = DATA_TYPE_NOTES.get(data_type, '')
+    data_type = DATA_TYPE_LABELS.get(data_type, data_type)
     relevance_val = df['relevance'].iloc[0] if 'relevance' in df.columns else 'N/A'
 
     if unknown_sig_config and unknown_sig_config.get('num_unknowns', 0) > 0:
@@ -1015,6 +1138,7 @@ def create_appendix_section(df, df_raw=None, unknown_sig_config=None, cosmic_ver
         unknown_weights_str = 0
 
     cosmic_version_label = cosmic_version_label or "COSMIC SBS signatures"
+    min_contribution_str = f"{min_contribution:g} mutations" if min_contribution is not None else "N/A"
 
     # Build unknown signatures description from config (for the Data Generation table below)
     if unknown_sig_config and unknown_sig_config.get('num_unknowns', 0) > 0:
@@ -1116,7 +1240,7 @@ def create_appendix_section(df, df_raw=None, unknown_sig_config=None, cosmic_ver
             <tr>
                 <td><strong>Data Type</strong></td>
                 <td>{data_type}</td>
-                <td style="color: #555; font-size: 0.9em;"><em>synthetic</em>: mutations drawn from COSMIC profiles with known ground-truth weights.</td>
+                <td style="color: #555; font-size: 0.9em;">{data_type_note}</td>
             </tr>
             <tr>
                 <td><strong>Signature Relevance</strong></td>
@@ -1142,6 +1266,12 @@ def create_appendix_section(df, df_raw=None, unknown_sig_config=None, cosmic_ver
                 <span>▶</span> <span>Metric Reference (click to expand)</span>
             </summary>
             <div style="padding: 1rem; background: #f8f9fa; border-radius: 4px; margin-top: 0.5rem; font-size: 0.9em; border: 1px solid #e5e7eb;">
+                <p style="margin: 0 0 0.75rem 0; padding: 0.6rem 0.8rem; background: #fff3cd; border: 1px solid #ffc107; border-radius: 4px; color: #856404;">
+                    <strong>Active-signature threshold:</strong> a signature counts as "present" in a sample only if its
+                    estimated contribution is &ge; <strong>{min_contribution_str}</strong> (config <code>evaluation.min_contribution</code>).
+                    Everything below that line is treated as absent — it's what determines P / R / F1 / MCC / FP / FN
+                    below, and predicted signatures below this threshold are hidden from the Signature Activity widget's markers.
+                </p>
                 <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 0.6rem; color: #374151; line-height: 1.5;">
                     <div><strong>P — Precision</strong>: fraction of reported signatures that are correct (penalizes over-fitting / false positives). Range 0–1, higher is better.</div>
                     <div><strong>R — Recall</strong>: fraction of true signatures that were found (penalizes missing signatures / false negatives). Range 0–1, higher is better.</div>
@@ -1185,6 +1315,10 @@ def create_appendix_section(df, df_raw=None, unknown_sig_config=None, cosmic_ver
                 <tr>
                     <td><strong>Independent Realizations</strong></td>
                     <td>{num_realizations} (for assessing algorithm stability)</td>
+                </tr>
+                <tr>
+                    <td><strong>Active-Signature Threshold</strong></td>
+                    <td>{min_contribution_str} (<code>evaluation.min_contribution</code>) — see Metric Reference above</td>
                 </tr>
             </table>
         </div>
@@ -1343,9 +1477,40 @@ def create_performance_metrics_section():
 # Plotting Functions
 # ============================================================================
 
-def get_tool_colors():
-    """Return consistent color scheme for tools (uses ReportMetadata)."""
-    return ReportMetadata().tool_colors
+# Candidate colors for tools missing from ReportMetadata.tool_colors (Plotly Dark24 + Alphabet)
+_FALLBACK_COLORS = [
+    '#2E91E5', '#E15F99', '#1CA71C', '#FB0D0D', '#DA16FF', '#222A2A', '#B68100', '#750D86',
+    '#EB663B', '#511CFB', '#00A08B', '#FB00D1', '#FC0080', '#B2828D', '#6C7C32', '#778AAE',
+    '#862A16', '#A777F1', '#620042', '#1616A7', '#DA60CA', '#6C4516', '#0D2A63', '#AF0038',
+    '#AA0DFE', '#3283FE', '#85660D', '#782AB6', '#565656', '#1C8356', '#16FF32', '#F7E1A0',
+    '#E2E2E2', '#1CBE4F', '#C4451C', '#DEA0FD', '#FE00FA', '#325A9B', '#FEAF16', '#F8A19F',
+    '#90AD1C', '#F6222E', '#1CFFCE', '#2ED9FF', '#B10DA1', '#C075A6', '#FC1CBF', '#B00068',
+]
+
+
+def _hex_to_rgb(hex_color):
+    h = hex_color.lstrip('#')
+    return tuple(int(h[i:i + 2], 16) for i in (0, 2, 4))
+
+
+def get_tool_colors(tools=None):
+    """Return the tool -> hex color map, shared by all reports.
+
+    Tools in ReportMetadata.tool_colors keep their fixed color. Any other tool in `tools`
+    is assigned (in alphabetical order, so deterministic) the fallback color that is
+    farthest in RGB space from every color already in use, so new tools stay
+    distinguishable from existing ones and from each other.
+    """
+    colors = dict(ReportMetadata().tool_colors)
+    used = [_hex_to_rgb(c) for c in colors.values()]
+    for tool in sorted(set(tools or []) - set(colors)):
+        def min_dist(candidate):
+            r = _hex_to_rgb(candidate)
+            return min(sum((a - b) ** 2 for a, b in zip(r, u)) for u in used)
+        best = max(_FALLBACK_COLORS, key=min_dist)
+        colors[tool] = best
+        used.append(_hex_to_rgb(best))
+    return colors
 
 
 def get_tool_base_method(tool):
@@ -2028,141 +2193,213 @@ def create_per_method_sample_plots(df_samples, cancer_type, tools, colors):
     return fig
 
 
-def create_hard_samples_summary_plot(df_samples, cancer_type, top_n=15):
-    """Summarize per-sample difficulty for cancer types with too many samples to plot
-    individually (see create_per_method_sample_plots, which gets unreadable much past
-    ~10 samples per burden: overlapping x-axis labels, illegible jitter clusters).
+def _load_sample_signature_tables(df_samples, cancer_type, results_dir):
+    """Per mutation burden, one row per simulated sample with its mean TAE / F1 / ENP across
+    tools and its ground-truth signature set (frozenset of signatures with weight > 0, from
+    results_dir/generated_data/{data_type}/weights_{cancer}-w_{rep}-{burden}.dat — "synthetic"
+    and "custom" both have ground truth and use the same layout).
 
-    For each mutation burden: rank samples by mean TAE across all tools (pooling tools,
-    not per-tool) — TAE (Total Absolute Error) measures how much of the correct signal
-    was misattributed, a more direct "how wrong is this sample" measure than F1 (which
-    only scores signature presence/absence and can look fine even when weights are far
-    off). Higher mean TAE = harder for everyone, not just one tool. Difficulty is then
-    related to each sample's signature-complexity feature (highest_ENP_known, the ENP —
-    Effective Number of Parties — of the most diffuse known signature active in that
-    sample; already computed by evaluate_tool_performance.py for Section 4). A flatter/
-    more diffuse active signature (high ENP) is harder to attribute correctly, so a
-    positive relationship here would explain why certain samples are uniformly hard.
-
-    Args:
-        df_samples: DataFrame with per-sample metrics (pooled across tools)
-        cancer_type: Cancer type to filter
-        top_n: How many of the hardest samples to show in the ranked bar chart
+    Returns a list of (burden, DataFrame[replicate, sample, TAE, F1?, highest_ENP_known?, sigs])
+    sorted by burden (hardest sample first), or None if metrics or ground-truth weights are
+    unavailable.
     """
-    cancer_samples = df_samples[df_samples['cancer_type'] == cancer_type]
-    if len(cancer_samples) == 0 or 'TAE' not in cancer_samples.columns:
+    if not results_dir or 'TAE' not in df_samples.columns:
         return None
+    cancer_samples = df_samples[df_samples['cancer_type'] == cancer_type]
+    if cancer_samples.empty:
+        return None
+    has_rep = 'replicate' in cancer_samples.columns
+    metric_cols = [c for c in ['TAE', 'F1', 'highest_ENP_known'] if c in cancer_samples.columns]
+    data_type = cancer_samples['data_type'].iloc[0] if 'data_type' in cancer_samples.columns else 'synthetic'
+    weights_dir = Path(results_dir) / 'generated_data' / data_type
 
-    mut_burdens = sorted(cancer_samples['num_muts'].unique())
-    has_enp = 'highest_ENP_known' in cancer_samples.columns
+    tables = []
+    for burden in sorted(cancer_samples['num_muts'].unique()):
+        rows = cancer_samples[cancer_samples['num_muts'] == burden]
+        group_cols = ['replicate', 'sample'] if has_rep else ['sample']
+        tae = rows.groupby(group_cols)[metric_cols].mean().reset_index()
+        if not has_rep:
+            tae['replicate'] = 0
+        presence = {}
+        for rep in tae['replicate'].unique():
+            path = weights_dir / f'weights_{cancer_type}-w_{int(rep)}-{int(burden)}.dat'
+            if not path.exists():
+                continue
+            w = pd.read_csv(path, sep='\t', index_col=0) > 0
+            for sample in w.columns:
+                presence[(rep, sample)] = frozenset(w.index[w[sample]])
+        tae['sigs'] = [presence.get((r, sm)) for r, sm in zip(tae['replicate'], tae['sample'])]
+        tae = tae.dropna(subset=['sigs'])
+        if len(tae) < 2:
+            continue
+        tables.append((burden, tae.sort_values('TAE', ascending=False).reset_index(drop=True)))
+    return tables or None
 
-    agg_spec = {'TAE': 'mean'}
-    if 'F1' in cancer_samples.columns:
-        agg_spec['F1'] = 'mean'
+
+def _bh_adjust(pvals):
+    """Benjamini-Hochberg adjusted p-values (q-values), same order as the input."""
+    p = np.asarray(pvals, dtype=float)
+    n = len(p)
+    order = np.argsort(p)
+    q = np.empty(n)
+    running = 1.0
+    for rank, idx in zip(range(n, 0, -1), order[::-1]):
+        running = min(running, p[idx] * n / rank)
+        q[idx] = running
+    return q
+
+
+def create_hard_samples_row_plot(df_samples, cancer_type, results_dir, out_of_reference_sigs=None,
+                                  top_n=15, top_k=12, min_group_n=5):
+    """One row of panels, sharing a single mutation-burden dropdown (menu sits outside the
+    plot area, to the right, so it never overlaps the subplot titles):
+      1. The `top_n` hardest samples — ranked by mean TAE across all tools (pooling tools,
+         not per-tool). TAE is used because it measures how much of the correct signal was
+         misattributed, a more direct "how wrong" measure than F1.
+      2. Which ground-truth signatures are over-represented among those hardest samples
+         (orange) compared with their frequency across all samples (grey). Unknown
+         (out-of-reference) signatures are outlined in red instead of labelled, to keep
+         the axis readable.
+      3. The effect on mean TAE of each signature being present vs. absent across all
+         samples (Mann-Whitney U test, Benjamini-Hochberg corrected; q < 0.05 marked '*').
+         Bars for unknown signatures are red, known signatures blue.
+    No in-plot legend is shown (color meaning is fixed across panels and described in the
+    caller's caption); this keeps the row compact enough that the burden dropdown never
+    overlaps a subplot.
+      4. (only if highest_ENP_known is available) Difficulty (mean TAE) vs. ENP — the
+         spectral flatness of the sample's most diffuse known signature — hardest samples
+         highlighted in red, to show whether hard samples share a diffuse dominant signature.
+    All panels use each sample's simulated ground-truth signature set (present = weight > 0,
+    from results_dir/generated_data/{data_type}/weights_{cancer}-w_{rep}-{burden}.dat).
+    Returns None if per-sample TAE or the ground-truth weights are unavailable.
+    """
+    from scipy.stats import mannwhitneyu
+
+    tables = _load_sample_signature_tables(df_samples, cancer_type, results_dir)
+    if tables is None:
+        return None
+    unknown = set(out_of_reference_sigs or [])
+    has_enp = all('highest_ENP_known' in tae.columns for _, tae in tables)
+    n_cols = 4 if has_enp else 3
+
+    def test_features(values, sigs_list, names):
+        results = []
+        for name in names:
+            mask = np.array([name in x for x in sigs_list])
+            n1, n0 = int(mask.sum()), int((~mask).sum())
+            if n1 < min_group_n or n0 < min_group_n:
+                continue
+            g1, g0 = values[mask], values[~mask]
+            try:
+                p = float(mannwhitneyu(g1, g0, alternative='two-sided').pvalue)
+            except ValueError:
+                p = 1.0
+            results.append(dict(name=name, effect=float(g1.mean() - g0.mean()),
+                                m1=float(g1.mean()), m0=float(g0.mean()), n1=n1, n0=n0, p=p))
+        if results:
+            for r, q in zip(results, _bh_adjust([r['p'] for r in results])):
+                r['q'] = float(q)
+        return sorted(results, key=lambda r: abs(r['effect']), reverse=True)[:top_k][::-1]
+
+    titles = [f'Hardest {top_n} samples', 'Over-represented signatures', 'Effect on TAE']
     if has_enp:
-        agg_spec['highest_ENP_known'] = 'mean'
+        titles.append('Difficulty vs. ENP')
+    fig = make_subplots(rows=1, cols=n_cols, horizontal_spacing=0.06, subplot_titles=titles)
+    fig.update_annotations(font_size=12)
 
-    fig = make_subplots(
-        rows=1, cols=2 if has_enp else 1,
-        subplot_titles=(
-            [f'Hardest {top_n} Samples (mean TAE across tools)', 'Difficulty vs. Signature Complexity (ENP)']
-            if has_enp else [f'Hardest {top_n} Samples (mean TAE across tools)']
-        ),
-        column_widths=[0.42, 0.58] if has_enp else None,
-    )
-
-    all_traces = []
     trace_burdens = []
+    for i, (burden, tae) in enumerate(tables):
+        visible = (i == 0)
+        n_all = len(tae)
+        hardest = tae.head(min(top_n, n_all))
 
-    for burden in mut_burdens:
-        burden_data = cancer_samples[cancer_samples['num_muts'] == burden]
-        per_sample = burden_data.groupby('sample').agg(agg_spec).reset_index()
-        per_sample = per_sample.sort_values('TAE', ascending=False)
-        hardest = per_sample.head(top_n)
-        hard_samples = set(hardest['sample'])
-        is_default = bool(burden == mut_burdens[0])
-        tae_max = float(per_sample['TAE'].max()) if len(per_sample) else 1.0
-
-        # Reverse so the single hardest (highest-TAE) sample renders at the top of the
-        # horizontal bar chart instead of the bottom.
+        # Panel 1: ranked bar of the hardest samples (reversed so #1 renders at the top).
         hardest_display = hardest.iloc[::-1]
-        hover_f1 = (
-            [f"<br>Mean F1: {f:.3f}" for f in hardest_display['F1']] if 'F1' in hardest_display.columns
-            else [''] * len(hardest_display)
-        )
-        bar_trace = go.Bar(
-            x=hardest_display['TAE'],
-            y=[str(s) for s in hardest_display['sample']],
-            orientation='h',
-            marker=dict(
-                color=hardest_display['TAE'], colorscale='RdYlGn_r', cmin=0, cmax=tae_max, showscale=False,
-                line=dict(color='black', width=0.5)
-            ),
-            text=[f"{t:.2f}" for t in hardest_display['TAE']],
-            textposition='outside',
-            customdata=hover_f1,
-            hovertemplate='Sample %{y}<br>Mean TAE: %{x:.3f}%{customdata}<extra></extra>',
-            showlegend=False,
-            visible=is_default,
-        )
-        fig.add_trace(bar_trace, row=1, col=1)
-        all_traces.append(bar_trace)
+        tae_max = float(tae['TAE'].max())
+        fig.add_trace(go.Bar(
+            x=hardest_display['TAE'], y=[str(s) for s in hardest_display['sample']], orientation='h',
+            marker=dict(color=hardest_display['TAE'], colorscale='RdYlGn_r', cmin=0, cmax=tae_max,
+                       showscale=False, line=dict(color='black', width=0.5)),
+            text=[f"{t:.2f}" for t in hardest_display['TAE']], textposition='outside',
+            hovertemplate='Sample %{y}<br>Mean TAE: %{x:.3f}<extra></extra>',
+            showlegend=False, visible=visible), row=1, col=1)
         trace_burdens.append(burden)
 
+        # Panel 2: signature frequency, hardest samples vs. all samples. Unknown signatures
+        # get a red outline instead of a "(unknown)" label suffix, to keep names short.
+        all_sigs = sorted(set().union(*tae['sigs']))
+        pct_all = {g: 100 * sum(g in x for x in tae['sigs']) / n_all for g in all_sigs}
+        pct_hard = {g: 100 * sum(g in x for x in hardest['sigs']) / len(hardest) for g in all_sigs}
+        top = sorted(all_sigs, key=lambda g: pct_hard[g] - pct_all[g], reverse=True)[:top_k][::-1]
+        line_colors = ['#dc2626' if g in unknown else 'rgba(0,0,0,0)' for g in top]
+        line_widths = [2 if g in unknown else 0 for g in top]
+        fig.add_trace(go.Bar(
+            y=top, x=[pct_all[g] for g in top], orientation='h', name='All samples',
+            marker=dict(color='#9ca3af', line=dict(color=line_colors, width=line_widths)),
+            showlegend=False, visible=visible,
+            hovertemplate='%{y}<br>%{x:.0f}% of all samples<extra></extra>'), row=1, col=2)
+        fig.add_trace(go.Bar(
+            y=top, x=[pct_hard[g] for g in top], orientation='h', name=f'Hardest {top_n}',
+            marker=dict(color='#f97316', line=dict(color=line_colors, width=line_widths)),
+            showlegend=False, visible=visible,
+            hovertemplate='%{y}<br>%{x:.0f}% of hardest samples<extra></extra>'), row=1, col=2)
+        trace_burdens += [burden, burden]
+
+        # Panel 3: present-vs-absent effect on TAE, per signature. Red = unknown, blue = known.
+        values = tae['TAE'].to_numpy(dtype=float)
+        res = test_features(values, list(tae['sigs']), all_sigs)
+        bar_colors = ['#dc2626' if r['name'] in unknown else '#2563eb' for r in res]
+        fig.add_trace(go.Bar(
+            y=[r['name'] for r in res], x=[r['effect'] for r in res], orientation='h',
+            marker_color=bar_colors, text=['*' if r['q'] < 0.05 else '' for r in res], textposition='outside',
+            customdata=[[r['m1'], r['m0'], r['n1'], r['n0'], r['p'], r['q']] for r in res],
+            hovertemplate=('%{y}<br>Effect (present − absent): %{x:+.3f}'
+                           '<br>Mean TAE present: %{customdata[0]:.3f} (n=%{customdata[2]})'
+                           '<br>Mean TAE absent: %{customdata[1]:.3f} (n=%{customdata[3]})'
+                           '<br>p=%{customdata[4]:.3g}, q=%{customdata[5]:.3g}<extra></extra>'),
+            showlegend=False, visible=visible), row=1, col=3)
+        trace_burdens.append(burden)
+
+        # Panel 4 (optional): difficulty vs. ENP of the sample's most diffuse known signature.
         if has_enp:
-            is_hard_mask = per_sample['sample'].isin(hard_samples)
-            other = per_sample[~is_hard_mask]
-            hard = per_sample[is_hard_mask]
-
-            scatter_other = go.Scatter(
+            hard_ids = set(hardest['sample'])
+            is_hard = tae['sample'].isin(hard_ids)
+            other, hard = tae[~is_hard], tae[is_hard]
+            fig.add_trace(go.Scatter(
                 x=other['highest_ENP_known'], y=other['TAE'], mode='markers',
-                marker=dict(color='#9ca3af', size=7, opacity=0.6),
-                name='Other samples',
-                text=[str(s) for s in other['sample']],
-                hovertemplate='Sample %{text}<br>ENP (known): %{x:.1f}<br>Mean TAE: %{y:.3f}<extra></extra>',
-                showlegend=is_default, legendgroup='other',
-                visible=is_default,
-            )
-            scatter_hard = go.Scatter(
+                marker=dict(color='#9ca3af', size=6, opacity=0.6), name='Other samples',
+                showlegend=False, visible=visible,
+                hovertemplate='Sample %{text}<br>ENP: %{x:.1f}<br>Mean TAE: %{y:.3f}<extra></extra>',
+                text=[str(s) for s in other['sample']]), row=1, col=4)
+            fig.add_trace(go.Scatter(
                 x=hard['highest_ENP_known'], y=hard['TAE'], mode='markers',
-                marker=dict(color='#dc2626', size=9, line=dict(color='black', width=1)),
-                name=f'Hardest {top_n}',
-                text=[str(s) for s in hard['sample']],
-                hovertemplate='Sample %{text}<br>ENP (known): %{x:.1f}<br>Mean TAE: %{y:.3f}<extra></extra>',
-                showlegend=is_default, legendgroup='hard',
-                visible=is_default,
-            )
-            fig.add_trace(scatter_other, row=1, col=2)
-            all_traces.append(scatter_other)
-            trace_burdens.append(burden)
-            fig.add_trace(scatter_hard, row=1, col=2)
-            all_traces.append(scatter_hard)
-            trace_burdens.append(burden)
+                marker=dict(color='#dc2626', size=8, line=dict(color='black', width=1)),
+                name=f'Hardest {top_n}', showlegend=False, visible=visible,
+                hovertemplate='Sample %{text}<br>ENP: %{x:.1f}<br>Mean TAE: %{y:.3f}<extra></extra>',
+                text=[str(s) for s in hard['sample']]), row=1, col=4)
+            trace_burdens += [burden, burden]
 
-    buttons = []
-    for burden in mut_burdens:
-        visible = [tb == burden for tb in trace_burdens]
-        buttons.append(dict(
-            label=f"{int(burden):,} mutations", method='update',
-            args=[{'visible': visible}, {'title': {'text': f'Hardest Samples — {int(burden):,} Mutations'}}]
-        ))
-
+    buttons = [dict(
+        label=f"{int(b):,} mutations", method='update',
+        args=[{'visible': [tb == b for tb in trace_burdens]},
+              {'title': {'text': f'Hardest Samples — {int(b):,} Mutations'}}])
+        for b, _ in tables]
     fig.update_layout(
-        title_text=f'Hardest Samples — {int(mut_burdens[0]):,} Mutations',
-        height=max(420, 30 * top_n),
-        margin=dict(l=140, r=40, t=90, b=60),
-        updatemenus=[dict(
-            buttons=buttons, direction='down', pad={'r': 10, 't': 10}, showactive=True,
-            x=1.0, xanchor='right', y=1.15, yanchor='top',
-            bgcolor='white', bordercolor='#ccc', borderwidth=1,
-        )],
+        title_text=f'Hardest Samples — {int(tables[0][0]):,} Mutations',
+        barmode='group', height=max(420, 28 * max(top_n, top_k)),
+        margin=dict(l=110, r=140, t=80, b=60),
+        # Menu placed outside the plot area (x > 1) so it can never overlap a subplot title.
+        updatemenus=[dict(buttons=buttons, direction='down', pad={'r': 5, 't': 5}, showactive=True,
+                          x=1.02, xanchor='left', y=1.0, yanchor='top',
+                          bgcolor='white', bordercolor='#ccc', borderwidth=1)],
         autosize=True,
     )
-    fig.update_xaxes(title_text='Mean TAE across tools', row=1, col=1)
+    fig.update_xaxes(title_text='Mean TAE', row=1, col=1)
+    fig.update_xaxes(title_text='% of samples', row=1, col=2)
+    fig.update_xaxes(title_text='Δ mean TAE (present − absent)', row=1, col=3, zeroline=True, zerolinecolor='black')
     if has_enp:
-        fig.update_xaxes(title_text='ENP of most diffuse known signature (1–96)', row=1, col=2)
-        fig.update_yaxes(title_text='Mean TAE across tools', row=1, col=2)
-
+        fig.update_xaxes(title_text='ENP (known)', row=1, col=4)
+        fig.update_yaxes(title_text='Mean TAE', row=1, col=4)
     return fig
 
 
@@ -2697,8 +2934,9 @@ def create_precision_recall_subplots(df, cancer_type, tools, colors, df_per_samp
 
 def create_metrics_grid(df, cancer_type, tools, colors, df_per_sample=None, pooled=False):
     """
-    Create 2x3 grid of performance metrics vs mutation count.
-    Shows mean across all samples/realizations with variance as error bars.
+    Create 3x3 grid (9 panels) of performance metrics vs mutation count, including the
+    % of mutations left unassigned (1 - weight_tot). Shows mean across all
+    samples/realizations with SEM as error bars.
 
     Args:
         df: DataFrame with evaluation metrics
@@ -2721,11 +2959,12 @@ def create_metrics_grid(df, cancer_type, tools, colors, df_per_sample=None, pool
     else:
         cancer_df = df[df['cancer_type'] == cancer_type]
 
-    # Create 2x3 subplot grid
+    # Create 3x3 subplot grid
     fig = make_subplots(
-        rows=2, cols=3,
-        subplot_titles=['F1 ↑', 'TAE ↓', 'MCC ↑', 'nRMSE ↓', 'FP Sigs', 'FN Sigs'],
-        vertical_spacing=0.15,
+        rows=3, cols=3,
+        subplot_titles=['F1 ↑', 'TAE ↓', 'MCC ↑', 'nRMSE ↓', 'FP Sigs', 'FN Sigs',
+                        '% Unassigned Mutations', 'Precision ↑', 'Recall ↑'],
+        vertical_spacing=0.1,
         horizontal_spacing=0.12
     )
 
@@ -2736,6 +2975,9 @@ def create_metrics_grid(df, cancer_type, tools, colors, df_per_sample=None, pool
         ('nRMSE', ['nRMSE', 'nRMSE_mean'], 2, 1),
         ('num_FP', ['num_FP_sigs', 'num_FP'], 2, 2),
         ('num_FN', ['num_FN_sigs', 'num_FN'], 2, 3),
+        ('pct_unassigned', ['pct_unassigned'], 3, 1),
+        ('P', ['P', 'P_mean'], 3, 2),
+        ('R', ['R', 'R_mean'], 3, 3),
     ]
 
     # Use per-sample data if available for proper error bars
@@ -2746,6 +2988,11 @@ def create_metrics_grid(df, cancer_type, tools, colors, df_per_sample=None, pool
             cancer_per_sample = df_per_sample
         else:
             cancer_per_sample = df_per_sample[df_per_sample['cancer_type'] == cancer_type]
+        if 'weight_tot' in cancer_per_sample.columns:
+            # weight_tot = assigned / observed mutations, so unassigned % = (1 - weight_tot) * 100
+            # (negative when a tool assigns more mutations than the sample has)
+            cancer_per_sample = cancer_per_sample.assign(
+                pct_unassigned=(1 - cancer_per_sample['weight_tot']) * 100)
 
     for tool in tools:
         tool_data = cancer_df[cancer_df['tool'] == tool]
@@ -2885,9 +3132,11 @@ def create_metrics_grid(df, cancer_type, tools, colors, df_per_sample=None, pool
     for col in [1, 2, 3]:
         fig.update_xaxes(type='log', title_text='Mutations', row=1, col=col)
         fig.update_xaxes(type='log', title_text='Mutations', row=2, col=col)
+        fig.update_xaxes(type='log', title_text='Mutations', row=3, col=col)
+    fig.update_yaxes(title_text='% of mutations', row=3, col=1)
     
     fig.update_layout(
-        height=700,
+        height=1000,
         title_text=f'{cancer_type} - Performance Metrics<br><sub>Mean ± SEM across all samples vs mutation burden</sub>',
         showlegend=True,
         legend=dict(x=1.05, y=1, itemdoubleclick='toggleothers'),
@@ -2898,21 +3147,19 @@ def create_metrics_grid(df, cancer_type, tools, colors, df_per_sample=None, pool
     return fig
 
 
-def create_aggregate_plot(df, tools, colors):
-    """Create aggregate precision-recall plot across all cancer types."""
-    # Group by tool and num_muts, calculate mean, std, and count for SEM
-    agg_df = df.groupby(['tool', 'num_muts']).agg({
-        'P_mean': ['mean', 'std', 'count'],
-        'R_mean': ['mean', 'std', 'count'],
-        'F1_mean': ['mean', 'std', 'count']
-    }).reset_index()
-    
-    agg_df.columns = ['tool', 'num_muts', 'P_mean', 'P_std', 'P_count', 'R_mean', 'R_std', 'R_count', 'F1_mean', 'F1_std', 'F1_count']
-    
-    # Calculate SEM
-    agg_df['P_sem'] = agg_df['P_std'] / np.sqrt(agg_df['P_count'])
-    agg_df['R_sem'] = agg_df['R_std'] / np.sqrt(agg_df['R_count'])
-    
+def create_aggregate_plot(df, tools, colors, df_per_sample=None):
+    """Create aggregate precision-recall plot across all cancer types.
+
+    Error bars are +-1 SEM. When per-sample data is available, SEM is computed over the
+    individual samples (std / sqrt(n samples)); otherwise it falls back to the SEM of the
+    per-group means in `df` (i.e. across cancer types/replicates, not samples).
+    """
+    if df_per_sample is not None and len(df_per_sample) > 0:
+        agg_df = mean_sem(df_per_sample, ['tool', 'num_muts'], ['P', 'R', 'F1'])
+    else:
+        group_means = df.rename(columns={'P_mean': 'P', 'R_mean': 'R', 'F1_mean': 'F1'})
+        agg_df = mean_sem(group_means, ['tool', 'num_muts'], ['P', 'R', 'F1'])
+
     fig = go.Figure()
     
     method_symbols = get_method_symbols()
@@ -2943,7 +3190,18 @@ def create_aggregate_plot(df, tools, colors):
             text=[f"Mutations: {m}" for m in tool_data['num_muts']],
             hovertemplate='<b>%{fullData.name}</b><br>Recall: %{x:.3f}<br>Precision: %{y:.3f}<br>%{text}<extra></extra>'
         ))
-    
+
+    # F1 reference curves (same grey dashed contours as the per-cancer-type PR plot).
+    for f1_val, f1_label in [(0.5, 'F1=0.5'), (0.7, 'F1=0.7'), (0.9, 'F1=0.9')]:
+        recall = np.linspace(0.01, 1, 100)
+        denom = 2 * recall - f1_val
+        precision = np.where(denom > 0, f1_val * recall / denom, np.nan)
+        precision = np.clip(precision, 0, 1)
+        fig.add_trace(go.Scatter(
+            x=recall, y=precision, mode='lines', name=f1_label,
+            line=dict(dash='dash', color='gray', width=1), opacity=0.5, hoverinfo='name'
+        ))
+
     fig.update_layout(
         title=dict(
             text='Aggregate Precision-Recall (Across All Cancer Types)<br><sub>Error bars: ±1 SEM (Standard Error of Mean)</sub>',
@@ -4501,30 +4759,41 @@ def create_feature_metric_scatter_widget(
 
 
 def build_signature_activity_data(results_dir, df, tools, colors, out_of_reference_sigs=None,
-                                   relevance='standard', selected_rep=None):
+                                   relevance='standard', selected_rep=None, min_contribution=None):
     """Load per-sample ground-truth vs. predicted signature activities for the
     Signature Activity widget (see create_signature_activity_widget below).
 
     Reads two things straight off disk (these aren't in any aggregated dataframe
-    already loaded by the report):
-      - ground truth: results_dir/generated_data/synthetic/weights_{cancer}-w_{rep}-{burden}.dat
+    already loaded by the report). Both "synthetic" and "custom" data types have
+    ground truth and use the same directory layout (just "custom" uses the dataset
+    name where "synthetic" uses a cancer type), so both are included here:
+      - ground truth: results_dir/generated_data/{data_type}/weights_{cancer}-w_{rep}-{burden}.dat
         (signature fractions per sample; multiplied by burden to get mutation counts)
-      - predictions: results_dir/synthetic/{cancer}/{relevance}/{burden}/rep_{rep}/{tool}_contribution.dat
+      - predictions: results_dir/{data_type}/{cancer}/{relevance}/{burden}/rep_{rep}/{tool}_contribution.dat
 
-    Returns a JSON string ready to embed client-side, or None if synthetic
-    ground-truth data isn't available for this run (e.g. real-sample-only reports).
+    Predicted signatures below `min_contribution` mutations are dropped (not just those
+    at exactly 0): the evaluation metrics (P/R/F1/MCC/FP/FN, via evaluate_tool_performance.py
+    --min-contribution) already treat them as "not called," so showing them as markers here
+    would contradict the metrics computed from the same threshold. Ground truth is left at
+    the raw >0 cut — it's what was actually simulated, not a detection call.
+
+    Returns a JSON string ready to embed client-side, or None if no ground-truth data
+    (synthetic or custom) is available for this run (e.g. real-sample-only reports).
     """
+    min_contribution = DEFAULT_MIN_CONTRIBUTION if min_contribution is None else min_contribution
     if not results_dir or df is None or df.empty:
         return None
 
-    synth_df = df[df['data_type'] == 'synthetic'] if 'data_type' in df.columns else df
-    if synth_df.empty or 'cancer_type' not in synth_df.columns or 'num_muts' not in synth_df.columns:
+    gt_df = df[df['data_type'].isin(['synthetic', 'custom'])] if 'data_type' in df.columns else df
+    if gt_df.empty or 'cancer_type' not in gt_df.columns or 'num_muts' not in gt_df.columns:
         return None
 
-    cancer_types = sorted(synth_df['cancer_type'].unique())
-    burdens = sorted(int(b) for b in synth_df['num_muts'].unique())
+    has_data_type_col = 'data_type' in gt_df.columns
+    cancer_data_types = sorted(gt_df[['cancer_type', 'data_type']].drop_duplicates().itertuples(index=False)) \
+        if has_data_type_col else [(c, 'synthetic') for c in sorted(gt_df['cancer_type'].unique())]
+    burdens = sorted(int(b) for b in gt_df['num_muts'].unique())
     if selected_rep is None:
-        selected_rep = int(synth_df['replicate'].min()) if 'replicate' in synth_df.columns else 0
+        selected_rep = int(gt_df['replicate'].min()) if 'replicate' in gt_df.columns else 0
 
     unknown_sigs = set(out_of_reference_sigs or [])
     results_root = Path(results_dir)
@@ -4538,9 +4807,9 @@ def build_signature_activity_data(results_dir, df, tools, colors, out_of_referen
     truth_data = {}
     pred_data = {}
 
-    for cancer_type in cancer_types:
+    for cancer_type, data_type in cancer_data_types:
         for burden in burdens:
-            weights_path = (results_root / 'generated_data' / 'synthetic' /
+            weights_path = (results_root / 'generated_data' / data_type /
                              f'weights_{cancer_type}-w_{selected_rep}-{burden}.dat')
             if not weights_path.exists():
                 continue
@@ -4556,14 +4825,14 @@ def build_signature_activity_data(results_dir, df, tools, colors, out_of_referen
                         sig: round(float(v), 2) for sig, v in active.items()
                     }
 
-            base_dir = results_root / 'synthetic' / cancer_type / relevance / str(burden) / f'rep_{selected_rep}'
+            base_dir = results_root / data_type / cancer_type / relevance / str(burden) / f'rep_{selected_rep}'
             for tool in sorted_tools:
                 contrib_path = base_dir / f'{tool}_contribution.dat'
                 if not contrib_path.exists():
                     continue
                 pred_df = pd.read_csv(contrib_path, index_col=0)
                 for sample in pred_df.columns:
-                    active = pred_df[sample][pred_df[sample] > 0]
+                    active = pred_df[sample][pred_df[sample] >= min_contribution]
                     if active.empty:
                         continue
                     pred_data[f"{cancer_type}|{burden}|{sample}|{tool}"] = {
@@ -4574,7 +4843,7 @@ def build_signature_activity_data(results_dir, df, tools, colors, out_of_referen
         return None
 
     return json.dumps({
-        'cancer_types': cancer_types,
+        'cancer_types': sorted({c for c, _ in cancer_data_types}),
         'burdens': burdens,
         'samples': samples or [],
         'tools': sorted_tools,
@@ -4818,7 +5087,7 @@ def create_signature_activity_widget(data_json, cancer_type, widget_id='sig_acti
 def create_visualizations_section(df, df_per_sample=None, df_bootstrap=None, df_raw=None,
                                    results_dir=None, id_prefix='', include_plotly_cdn=True,
                                    out_of_reference_sigs=None, relevance='standard',
-                                   unknown_sig_config=None):
+                                   unknown_sig_config=None, min_contribution=None):
     """Create main visualizations section with tabs.
 
     Args:
@@ -4829,15 +5098,10 @@ def create_visualizations_section(df, df_per_sample=None, df_bootstrap=None, df_
         results_dir: Optional base results directory for reading contribution files
         id_prefix: String prefix for all HTML element IDs (needed when called multiple times)
         include_plotly_cdn: Whether to include plotly.js CDN link in the first figure
-        unknown_sig_config: Optional dict {'num_unknowns': int, 'weights': list} — the
-            "Does Signature Complexity Affect Tool Performance?" widget only makes sense
-            when some fraction of mutations actually come from unknown signatures, so it's
-            gated on sum(weights) > 0 rather than just the config key being present (configs
-            keep out_of_reference_weights: [0.0] around even for the 0%-unknown baseline run).
+        unknown_sig_config: Optional dict {'num_unknowns': int, 'weights': list} with the
+            simulated unknown-signature configuration (currently unused here; kept for a
+            uniform call signature with create_report_intro/create_appendix_section).
     """
-    has_unknown_signal = bool(
-        unknown_sig_config and sum(unknown_sig_config.get('weights') or []) > 0
-    )
 
     # Get tool order and filter to only tools present in data
     tool_order = get_tool_display_order()
@@ -4848,7 +5112,7 @@ def create_visualizations_section(df, df_per_sample=None, df_bootstrap=None, df_
     tools.extend(remaining_tools)
 
     cancer_types = sorted(df['cancer_type'].unique())
-    colors = get_tool_colors()
+    colors = get_tool_colors(tools)
 
     html = '<section id="visualizations" class="section">\n'
     html += '<h2>📈 Visualizations</h2>\n'
@@ -4862,23 +5126,10 @@ def create_visualizations_section(df, df_per_sample=None, df_bootstrap=None, df_
     html += f'<button class="tab" onclick="switchTab(\'{id_prefix}aggregate-tab\', event)">Aggregate Analysis</button>\n'
     html += '</div>\n'
 
-    # Precompute the feature-metric widget's data once: df_per_sample is embedded unfiltered
-    # into every per-cancer-type tab, so serializing it per-iteration would repeat identical work.
-    feature_widget_has_features = False
-    feature_widget_data_json = None
-    if df_per_sample is not None:
-        feature_cols = ['highest_ENP_known', 'highest_ENP_unknown']
-        feature_widget_has_features = any(col in df_per_sample.columns for col in feature_cols)
-        if feature_widget_has_features:
-            feature_widget_data_json = json.dumps({
-                'header': df_per_sample.columns.tolist(),
-                'rows': df_per_sample.astype(str).values.tolist()
-            })
-
     # Precompute the signature-activity widget's data once (covers all cancer types);
     # each per-cancer-type tab below embeds its own widget instance scoped to that cancer type.
     sig_activity_json = build_signature_activity_data(
-        results_dir, df, tools, colors, out_of_reference_sigs, relevance
+        results_dir, df, tools, colors, out_of_reference_sigs, relevance, min_contribution=min_contribution
     )
 
     # Per-cancer-type tabs
@@ -5024,16 +5275,18 @@ def create_visualizations_section(df, df_per_sample=None, df_bootstrap=None, df_
                 if 'sample' in df_per_sample.columns else 0
             )
             if cancer_sample_count > 10:
-                fig_per_method = create_hard_samples_summary_plot(df_per_sample, cancer_type)
+                fig_per_method = create_hard_samples_row_plot(
+                    df_per_sample, cancer_type, results_dir, out_of_reference_sigs)
                 section_title = 'Hardest Samples — which samples are hard for all tools?'
                 section_desc = (
-                    f'With {cancer_sample_count} samples per condition, an individual per-sample plot is '
-                    'too crowded to read. Left: the samples with the highest mean TAE across all tools '
-                    '(TAE measures how much of the correct signal was misattributed — a more direct '
-                    '"how wrong" measure than F1). Right: the same samples\' difficulty plotted against '
-                    'ENP (Effective Number of Parties) — the spectral flatness of the most diffuse known '
-                    'signature active in that sample. A positive trend suggests these samples are hard '
-                    'because their dominant signature has a diffuse, easily-confused spectrum, not just bad luck.'
+                    f'With {cancer_sample_count} samples per condition, an individual per-sample plot is too '
+                    'crowded to read, so samples are ranked by mean TAE across all tools instead (higher TAE '
+                    '= more of the true signal misattributed, i.e. harder for everyone). Left to right: the '
+                    'hardest samples; how often each ground-truth signature occurs in the hardest samples '
+                    '(orange) vs. all samples (grey), unknown signatures outlined in red; effect of each '
+                    'signature\'s presence on mean TAE (red = unknown, blue = known, * = significant q &lt; 0.05); '
+                    'and, where available, difficulty vs. ENP (spectral flatness) of the sample\'s most diffuse '
+                    'known signature, hardest samples in red. Use the dropdown to switch mutation burden.'
                 )
                 div_id = f'hard_samples_{tab_id}'
             else:
@@ -5060,43 +5313,6 @@ def create_visualizations_section(df, df_per_sample=None, df_bootstrap=None, df_
                 html += '</div>\n'
                 html += '</div>\n\n'
         
-        # SECTION 4: Interactive Feature vs Metric Analysis (only meaningful when the
-        # simulation actually includes unknown-signature mutations — highest_ENP_unknown
-        # is otherwise always zero/absent, since there's nothing unknown to measure)
-        if df_per_sample is not None and has_unknown_signal:
-            html += '<div style="margin: 2rem 0; padding: 1.5rem; background: #f8f9fa; border-left: 4px solid #7c3aed; border-radius: 4px;">\n'
-            html += '<h4 style="margin-top: 0; color: #7c3aed;">📊 Does Signature Complexity Affect Tool Performance?</h4>\n'
-            html += '<p style="color: #666; margin-bottom: 1rem;">Some samples are harder than others because their active signatures have a more spread-out (diffuse) mutational spectrum — measured here by ENP (Effective Number of Parties, range 1–96). ENP = 1 means all mutations fall in a single channel; ENP = 96 means they are perfectly uniform across all channels. Filter samples by ENP range or other metrics, then compare how each tool performs on the selected subset.</p>\n'
-            
-            # Add explanations of the features
-            html += '<div style="background: white; padding: 1rem; border-radius: 6px; margin-bottom: 1.5rem; border: 1px solid #e5e7eb;">\n'
-            html += '<h5 style="margin-top: 0; color: #374151; font-size: 14px; font-weight: 600;">📐 Sample Features Explained:</h5>\n'
-            html += '<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 0.75rem; font-size: 13px; color: #4b5563;">\n'
-            html += '<div><strong>highest_ENP_known</strong>: Complexity of the most diffuse <em>known</em> (in-reference) signature active in this sample. Scale 1–96; higher = more uniform spectrum = harder to attribute correctly.</div>\n'
-            html += '<div><strong>highest_ENP_unknown</strong>: Complexity of the most diffuse <em>unknown</em> (out-of-reference) signature active in this sample. Higher = the hidden signal is more spread out and harder to distinguish from background noise.</div>\n'
-            html += '</div>\n'
-            html += '</div>\n'
-            
-            # Add feature-metric scatter widget (data/has_features precomputed once above,
-            # since df_per_sample is embedded unfiltered and identical across every tab)
-            if feature_widget_has_features:
-                html += '<div style="margin-top: 1rem;">\n'
-                widget_html = create_feature_metric_scatter_widget(
-                    'all_per_sample_metrics.tsv',  # Kept for compatibility
-                    'all_per_sample_metrics.tsv',  # Kept for compatibility
-                    widget_id=f'feature_metric_{tab_id}',
-                    data_json=feature_widget_data_json,  # Reuse pre-serialized data across tabs
-                    colors=colors  # Reuse the report's canonical tool color mapping
-                )
-                html += widget_html
-                html += '</div>\n'
-            else:
-                html += '<div style="padding: 1rem; background: #fff3cd; border: 1px solid #ffc107; border-radius: 4px; margin: 1rem 0;">\n'
-                html += '<p style="margin: 0; color: #856404;"><strong>Note:</strong> Sample features not found. Re-run the workflow to compute features (ENP, condition number, KL divergence, etc.).</p>\n'
-                html += '</div>\n'
-            
-            html += '</div>\n'  # Close complexity analysis section
-
         # SECTION 5: Signature Activity per Sample (ground truth vs. predicted)
         if sig_activity_json is not None:
             html += '<div style="margin: 2rem 0; padding: 1.5rem; background: #f8f9fa; border-left: 4px solid #0891b2; border-radius: 4px;">\n'
@@ -5111,11 +5327,6 @@ def create_visualizations_section(df, df_per_sample=None, df_bootstrap=None, df_
             )
             html += '</div>\n'  # Close signature activity section
 
-        # Bootstrap quality assessment for this cancer type (DISABLED)
-        # if df_bootstrap is not None and len(df_bootstrap) > 0:
-        #     html += '<h4 style="margin-top: 2rem;">Bootstrap Quality Assessment</h4>\n'
-        #     (bootstrap code commented out)
-        
         html += '</div>\n'
     
     # Aggregate tab
@@ -5124,9 +5335,9 @@ def create_visualizations_section(df, df_per_sample=None, df_bootstrap=None, df_
     html += '<p>Performance averaged across all cancer types.</p>\n'
     
     # Precision-Recall plot
-    fig_agg = create_aggregate_plot(df, tools, colors)
+    fig_agg = create_aggregate_plot(df, tools, colors, df_per_sample)
     html += '<div class="plot-container">\n'
-    html += fig_agg.to_html(include_plotlyjs=False, div_id='aggregate_plot', config={'responsive': True})
+    html += fig_agg.to_html(include_plotlyjs=False, div_id=f'{id_prefix}aggregate_plot', config={'responsive': True})
     html += '</div>\n'
     
     # Aggregate metrics grid (pooled across cancer types)
@@ -5152,7 +5363,7 @@ def create_visualizations_section(df, df_per_sample=None, df_bootstrap=None, df_
     
     fig_agg_metrics = create_metrics_grid(agg_metrics_df, 'All Cancer Types (Pooled)', tools, colors, df_per_sample, pooled=True)
     html += '<div class="plot-container">\n'
-    html += fig_agg_metrics.to_html(include_plotlyjs=False, div_id='aggregate_metrics_grid', config={'responsive': True})
+    html += fig_agg_metrics.to_html(include_plotlyjs=False, div_id=f'{id_prefix}aggregate_metrics_grid', config={'responsive': True})
     html += '</div>\n'
     
     html += '</div>\n'
@@ -5195,15 +5406,6 @@ def create_visualizations_section(df, df_per_sample=None, df_bootstrap=None, df_
             </ul>
         </div>
         '''
-        
-        # Bootstrap plots (DISABLED)
-        # fig_zscore = create_bootstrap_zscore_distribution(df_bootstrap, tools, colors)
-        # fig_scatter = create_bootstrap_scatter(df_bootstrap, tools, colors)
-        # (bootstrap code commented out)
-        
-        # Bootstrap summary statistics table (DISABLED)
-        # html += '<h4>Summary Statistics</h4>\n'
-        # (table code commented out)
     
     html += '</section>\n'
     
@@ -5214,7 +5416,57 @@ def create_visualizations_section(df, df_per_sample=None, df_bootstrap=None, df_
 # Main Report Generator
 # ============================================================================
 
-def generate_report(df, output_file, title, subtitle, df_per_sample=None, df_bootstrap=None, df_raw=None, results_dir=None, unknown_sig_config=None, cosmic_version_label=None, out_of_reference_sigs=None, relevance='standard'):
+def find_failed_tool_runs(results_dir, data_type):
+    """Tool runs that recorded a failure in their result file ("# TOOL FAILED: <reason>").
+
+    Looks in results_dir/{data_type}/{dataset}/{relevance}/{num_muts}/rep_{rep}/ (the RUN_DIR
+    layout in workflow/rules/common.smk).
+    """
+    failed = []
+    if not results_dir or not data_type:
+        return failed
+    for path in sorted((Path(results_dir) / data_type).glob("*/*/*/rep_*/*_contribution.dat")):
+        with open(path) as f:
+            first_line = f.readline().strip()
+        if first_line.startswith("# TOOL FAILED"):
+            dataset, relevance, num_muts, rep = path.parts[-5:-1]
+            failed.append({
+                "tool": path.name[:-len("_contribution.dat")],
+                "run": f"{dataset}, {num_muts} mutations, {relevance}, {rep.replace('_', ' ')}",
+                "reason": first_line.split(":", 1)[-1].strip() or "see the tool's log",
+            })
+    return failed
+
+
+def create_failed_tools_section(failed):
+    """Section listing the tools that failed, in which runs, and why. Empty if none failed."""
+    if not failed:
+        return ""
+    by_tool = {}
+    for row in failed:
+        by_tool.setdefault(row["tool"], []).append(row)
+    out = '<section id="failed-tools" class="section">\n'
+    out += '<h2>\u26a0\ufe0f Failed tools</h2>\n'
+    out += ('<p>These tools did not produce a result in the runs listed, so they are left out of '
+            'the tables and plots for those runs. The full error is in each run\'s tool log.</p>\n')
+    out += ('<table style="width:100%;border-collapse:collapse;font-size:14px;">\n'
+            '<tr style="text-align:left;border-bottom:2px solid #d1d5db;">'
+            '<th style="padding:6px;">Tool</th><th style="padding:6px;">Failed runs</th>'
+            '<th style="padding:6px;">Reason</th><th style="padding:6px;">Runs</th></tr>\n')
+    for tool, rows in sorted(by_tool.items()):
+        reasons = sorted({r["reason"] for r in rows})
+        runs = [r["run"] for r in rows]
+        shown = ", ".join(runs[:6]) + (f" and {len(runs) - 6} more" if len(runs) > 6 else "")
+        out += ('<tr style="border-bottom:1px solid #e5e7eb;vertical-align:top;">'
+                f'<td style="padding:6px;font-weight:600;">{html.escape(tool)}</td>'
+                f'<td style="padding:6px;">{len(rows)}</td>'
+                f'<td style="padding:6px;">{"<br>".join(html.escape(r) for r in reasons)}</td>'
+                f'<td style="padding:6px;color:#6b7280;">{html.escape(shown)}</td></tr>\n')
+    out += '</table>\n</section>\n'
+    return out
+
+
+def generate_report(df, output_file, title, subtitle, df_per_sample=None, df_bootstrap=None, df_raw=None, results_dir=None, unknown_sig_config=None, cosmic_version_label=None, out_of_reference_sigs=None, relevance='standard', tool_overrides=None, df_benchmarks=None, min_contribution=None, failed_runs=None):
     """
     Generate complete HTML report.
 
@@ -5234,12 +5486,22 @@ def generate_report(df, output_file, title, subtitle, df_per_sample=None, df_boo
                           fitting catalog, used to label truth signatures as reference vs. unknown
                           in the Signature Activity widget
         relevance: Relevance mode subdirectory name used under results_dir/synthetic/{cancer}/{relevance}/...
+        df_benchmarks: Optional pandas.DataFrame with per-tool wall time / peak memory
+                          (all_tool_benchmarks.tsv — see aggregate_tool_benchmarks.py)
+        min_contribution: Optional float — config's evaluation.min_contribution (the
+                          mutation-count threshold for a signature to count as "active";
+                          see create_appendix_section / build_signature_activity_data)
     """
     print("\nGenerating report sections...")
 
     # Generate all sections
-    intro_html = create_report_intro(df, unknown_sig_config)
-    appendix_html = create_appendix_section(df, df_raw, unknown_sig_config, cosmic_version_label)
+    intro_html = create_report_intro(df, unknown_sig_config, tool_overrides)
+    tool_order = get_tool_display_order()
+    available_tools = set(df['tool'].unique())
+    all_tools = [t for t in tool_order if t in available_tools]
+    all_tools += sorted(available_tools - set(all_tools))
+    resources_html = create_resource_usage_section(df_benchmarks, get_tool_colors(all_tools))
+    appendix_html = create_appendix_section(df, df_raw, unknown_sig_config, cosmic_version_label, min_contribution)
 
     # Build visualizations section — one sub-section per data_type when multiple exist
     data_types = sorted(df['data_type'].unique()) if 'data_type' in df.columns else ['synthetic']
@@ -5247,7 +5509,7 @@ def generate_report(df, output_file, title, subtitle, df_per_sample=None, df_boo
         visualizations_html = create_visualizations_section(
             df, df_per_sample, df_bootstrap, df_raw, results_dir,
             out_of_reference_sigs=out_of_reference_sigs, relevance=relevance,
-            unknown_sig_config=unknown_sig_config
+            unknown_sig_config=unknown_sig_config, min_contribution=min_contribution
         )
     else:
         # Toggle buttons
@@ -5294,6 +5556,7 @@ def generate_report(df, output_file, title, subtitle, df_per_sample=None, df_boo
                 out_of_reference_sigs=out_of_reference_sigs,
                 relevance=relevance,
                 unknown_sig_config=unknown_sig_config,
+                min_contribution=min_contribution,
             )
             # Remove opening <section ...> and closing </section> tags so they don't nest
             inner = inner.replace('<section id="visualizations" class="section">\n', '', 1)
@@ -5306,7 +5569,8 @@ def generate_report(df, output_file, title, subtitle, df_per_sample=None, df_boo
         vis_html += '</section>\n'
         visualizations_html = vis_html
 
-    content = intro_html + visualizations_html + appendix_html
+    content = (intro_html + create_failed_tools_section(failed_runs) + visualizations_html
+               + resources_html + appendix_html)
     
     # Fill template
     timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
@@ -5333,14 +5597,23 @@ def generate_report(df, output_file, title, subtitle, df_per_sample=None, df_boo
 # Command Line Interface
 # ============================================================================
 
+def keep_data_type(df, data_type):
+    """Keep only the rows of one data type (all rows if data_type is None)."""
+    if df is None or data_type is None or 'data_type' not in df.columns:
+        return df
+    return df[df['data_type'] == data_type].reset_index(drop=True)
+
+
 def main(summaries, per_sample, bootstrap_quality, output, title, subtitle,
-         results_dir, config_file):
-    """Main entry point."""
+         results_dir, config_file, tool_benchmarks=None, data_type=None):
+    """Main entry point. With data_type, the report shows only that data type."""
     # Load unknown signature info from config if provided
     unknown_sig_config = None
+    tool_overrides = None
     cosmic_version_label = None
     out_of_reference_sigs = []
     relevance = 'standard'
+    min_contribution = None
 
     if config_file:
         print(f"Attempting to load config file: {config_file}")
@@ -5356,6 +5629,8 @@ def main(summaries, per_sample, bootstrap_quality, output, title, subtitle,
                 )
                 out_of_reference_sigs = config_data.get('out_of_reference_sigs', []) or []
                 relevance = (config_data.get('relevance_modes') or ['standard'])[0]
+                tool_overrides = config_data.get('tool_overrides') or {}
+                min_contribution = config_data.get('evaluation', {}).get('min_contribution')
                 out_of_ref_weights = config_data.get('out_of_reference_weights', [])
                 if out_of_ref_weights:
                     unknown_sig_config = {
@@ -5365,6 +5640,17 @@ def main(summaries, per_sample, bootstrap_quality, output, title, subtitle,
                     print(f"  - With fixed weights: {out_of_ref_weights}")
                 else:
                     print("\nNo unknown signatures configured (out_of_reference_sigs is empty)")
+                if data_type == 'custom':
+                    # Custom datasets have their own catalogue and hidden signatures
+                    datasets = (config_data.get('custom_datasets') or {}).values()
+                    catalogues = {ds.get('signature_file') or
+                                  config_data.get('cosmic_signatures', {}).get('base_file')
+                                  for ds in datasets}
+                    if len(catalogues) == 1:
+                        cosmic_version_label = _derive_cosmic_label(catalogues.pop())
+                    out_of_reference_sigs = sorted({s for ds in datasets
+                                                    for s in ds.get('out_of_reference_sigs') or []})
+                    unknown_sig_config = None
         except Exception as e:
             print(f"\n❌ ERROR: Could not load config file {config_file}: {e}")
     else:
@@ -5376,17 +5662,19 @@ def main(summaries, per_sample, bootstrap_quality, output, title, subtitle,
 
     # Load summary data only for df_raw (used in realization stability plots)
     _, df_raw = load_evaluation_data(summaries, return_raw=True)
+    df_raw = keep_data_type(df_raw, data_type)
 
     df_per_sample = None
     if per_sample:
         print(f"\nLoading per-sample metrics from {len(per_sample)} file(s)...")
-        df_per_sample = load_per_sample_data(per_sample)
+        df_per_sample = keep_data_type(load_per_sample_data(per_sample), data_type)
 
     if df_per_sample is not None and not df_per_sample.empty:
         df = reaggregate_from_per_sample(df_per_sample)
         print(f"  Summary df re-aggregated from per-sample data. Shape: {df.shape}")
     else:
         df, _ = load_evaluation_data(summaries, return_raw=True)
+        df = keep_data_type(df, data_type)
 
     # Load bootstrap quality assessment if provided
     df_bootstrap = None
@@ -5394,7 +5682,18 @@ def main(summaries, per_sample, bootstrap_quality, output, title, subtitle,
         print(f"\nLoading bootstrap quality assessment from {len(bootstrap_quality)} file(s)...")
         df_bootstrap = load_evaluation_data(bootstrap_quality)
 
-    generate_report(df, output, title, subtitle, df_per_sample, df_bootstrap, df_raw, results_dir, unknown_sig_config, cosmic_version_label, out_of_reference_sigs, relevance)
+    # Load per-tool wall time / peak memory if provided (all_tool_benchmarks.tsv, written
+    # by aggregate_tool_benchmarks.py from Snakemake's benchmark: TSVs — see tools.smk)
+    df_benchmarks = None
+    if tool_benchmarks:
+        print(f"\nLoading tool resource benchmarks from {len(tool_benchmarks)} file(s)...")
+        df_benchmarks = keep_data_type(load_evaluation_data(tool_benchmarks), data_type)
+
+    failed_runs = find_failed_tool_runs(results_dir, data_type)
+    if failed_runs:
+        print(f"\n{len(failed_runs)} failed tool run(s) will be listed in the report")
+
+    generate_report(df, output, title, subtitle, df_per_sample, df_bootstrap, df_raw, results_dir, unknown_sig_config, cosmic_version_label, out_of_reference_sigs, relevance, tool_overrides, df_benchmarks, min_contribution, failed_runs)
 
 
 if 'snakemake' in dir():
@@ -5410,6 +5709,8 @@ if 'snakemake' in dir():
         subtitle=snakemake.params.subtitle,
         results_dir=snakemake.params.results_dir,
         config_file=getattr(snakemake.input, 'config_file', None) or None,
+        tool_benchmarks=[snakemake.input.tool_benchmarks] if getattr(snakemake.input, 'tool_benchmarks', None) else None,
+        data_type=snakemake.params.data_type,
     )
 elif __name__ == '__main__':
     parser = argparse.ArgumentParser(
@@ -5424,6 +5725,7 @@ elif __name__ == '__main__':
     parser.add_argument('--subtitle', default='Mutational Signature Fitting Tool Comparison')
     parser.add_argument('--results-dir')
     parser.add_argument('--config')
+    parser.add_argument('--tool-benchmarks', nargs='+')
     args = parser.parse_args()
     main(
         summaries=args.summaries,
@@ -5434,4 +5736,5 @@ elif __name__ == '__main__':
         subtitle=args.subtitle,
         results_dir=args.results_dir,
         config_file=args.config,
+        tool_benchmarks=args.tool_benchmarks,
     )

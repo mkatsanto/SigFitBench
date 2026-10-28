@@ -136,6 +136,16 @@ def align_signature_dataframes(
     return df_fitted, df_true
 
 
+def tool_failure(results_file: str) -> Optional[str]:
+    """The reason if the tool recorded a failure in its result file ("# TOOL FAILED: ..."),
+    otherwise None."""
+    with open(results_file) as f:
+        first_line = f.readline().strip()
+    if first_line.startswith("# TOOL FAILED"):
+        return first_line.split(":", 1)[-1].strip() or "see the tool's log"
+    return None
+
+
 def load_tool_results(results_file: str) -> pd.DataFrame:
     """Load tool results (fitted signature weights).
     Expected format: CSV or TSV with signatures as rows, samples as columns.
@@ -217,7 +227,8 @@ def evaluate_performance(
         df_true: DataFrame with true signature weights (signatures × samples)
         ref_signatures: List of reference signatures available for fitting
         muts: Series with number of mutations per sample
-        min_contribution: Minimum mutation count to consider a signature active
+        min_contribution: Predicted signatures with fewer mutations count as not found
+            (TAE and other errors still use the full weights)
         out_of_reference_sigs: List of out-of-reference signature names to exclude from ground truth
         
     Returns:
@@ -241,13 +252,8 @@ def evaluate_performance(
     #   * e.g., SBS86 in simulation catalog but not in fitting catalog = unknown
     #   * Methods are penalized for missing this signal (false negative)
     # 
-    # EXCLUDE signatures from predictions that are NOT in fitting catalog:
-    # - Internally-created by methods (Unknown_X, SigA, arbitrary names, etc.)
-    # - These don't correspond to real COSMIC signatures in the fitting catalog
-    # - They are artifacts and should not be included in evaluation
-    
-    # Identify unknown signatures in ground truth
-    # Unknown = (in simulation/ground truth) AND (NOT in fitting reference catalog)
+    # Unknown signatures: in the simulation but not in the fitting reference.
+    # They stay in the evaluation, so a tool that misses their mutations is penalised.
     unknown_in_truth_mask = ~df_true.index.isin(ref_signatures)
     if unknown_in_truth_mask.any():
         unknown_sigs = df_true[unknown_in_truth_mask].index.tolist()
@@ -256,13 +262,14 @@ def evaluate_performance(
         print(f"  Total unknown weight: {unknown_weight:.1f} mutations", file=sys.stderr)
         print(f"  KEEPING unknowns in evaluation - methods penalized if they miss this signal", file=sys.stderr)
     
-    # Log out-of-reference signatures (deprecated parameter - now handled above)
+    # The out_of_reference_sigs list is not needed: unknown signatures are found above by
+    # comparing the simulation with the fitting reference
     if out_of_reference_sigs and len(out_of_reference_sigs) > 0:
         print(f"  Note: out_of_reference_sigs parameter provided but not needed", file=sys.stderr)
         print(f"        Unknowns automatically identified by comparing simulation vs fitting catalog", file=sys.stderr)
     
-    # MANDATORY: Remove non-fitting-catalog signatures from predictions
-    # Keep only predicted signatures that are in the fitting reference catalog
+    # Signatures a tool creates itself (e.g. Unknown_X, SigA) are not in the fitting
+    # reference and cannot be matched to the truth, so they are left out of the evaluation
     non_fitting_mask = ~df_fitted.index.isin(ref_signatures)
     if non_fitting_mask.any():
         non_fitting_sigs = df_fitted[non_fitting_mask].index.tolist()
@@ -270,7 +277,6 @@ def evaluate_performance(
         print(f"  Predictions contain {non_fitting_mask.sum()} non-fitting-catalog signature(s): {non_fitting_sigs}", file=sys.stderr)
         print(f"  Total non-fitting-catalog weight: {non_fitting_weight:.1f} mutations", file=sys.stderr)
         print(f"  EXCLUDING non-fitting-catalog signatures from evaluation (internally created)", file=sys.stderr)
-        # Remove non-fitting-catalog signatures from predictions
         df_fitted = df_fitted[~non_fitting_mask]
     else:
         print(f"  All {len(df_fitted)} prediction signatures are in fitting catalog", file=sys.stderr)
@@ -302,12 +308,14 @@ def evaluate_performance(
         # "Unknown" = active in truth AND not in the fitting reference catalog.
         num_active_sigs = 0
         num_unknown_active = 0
+        unknown_weight = 0.0  # mutation count on unknown signatures (for theoretical_min_TAE)
         for sig in df_true.index:
             true_weight = df_true.loc[sig, sample]
             if true_weight > 0:
                 num_active_sigs += 1
                 if sig not in ref_signatures:
                     num_unknown_active += 1
+                    unknown_weight += true_weight
 
         num_known_active = num_active_sigs - num_unknown_active
 
@@ -338,7 +346,7 @@ def evaluate_performance(
                 sample_MAE_active += np.abs(fitted_weight - true_weight) / muts[sample]
                 MAE_active += np.abs(fitted_weight - true_weight) / muts[sample]
                 
-                if fitted_weight == 0:  # False negative
+                if fitted_weight < min_contribution:  # False negative
                     sample_wtot_FN += true_weight / muts[sample]
                     sample_num_FN += 1
                     wtot_FN += true_weight / muts[sample]
@@ -347,7 +355,7 @@ def evaluate_performance(
                 else:  # True positive
                     num_TP += 1
             else:  # Inactive signature in ground truth
-                if fitted_weight > 0:  # False positive
+                if fitted_weight >= min_contribution:  # False positive
                     wtot_FP += fitted_weight / muts[sample]
                     wtot_FP_one_sample += fitted_weight
                     num_FP_sigs += 1
@@ -415,7 +423,15 @@ def evaluate_performance(
         numerator = TP_theoretical * TN_theoretical - FP_theoretical * FN_theoretical
         denominator = np.sqrt((TP_theoretical + FP_theoretical) * (TP_theoretical + FN_theoretical) * (TN_theoretical + FP_theoretical) * (TN_theoretical + FN_theoretical))
         theoretical_max_mcc = numerator / denominator if denominator > 0 else 0.0
-        
+
+        # Best case for TAE: known signatures fit perfectly (zero error), unknown
+        # signatures' mutations can't be placed anywhere (no catalog entry for them) and
+        # aren't misattributed onto known signatures either -- so the only irreducible
+        # error is the unknown signatures' own true weight. Same normalization as TAE
+        # itself (err.../(2*muts)). Zero when there are no unknowns (e.g. a custom
+        # dataset's own catalog, with nothing excluded from the fitting reference).
+        theoretical_min_tae = unknown_weight / (2 * muts[sample]) if muts[sample] > 0 else 0.0
+
         # Store per-sample metrics
         per_sample_metrics.append({
             'sample': sample,
@@ -433,6 +449,7 @@ def evaluate_performance(
             'theoretical_max_F1': theoretical_max_f1,
             'theoretical_max_MCC': theoretical_max_mcc,
             'theoretical_min_FN': num_unknown_active,
+            'theoretical_min_TAE': theoretical_min_tae,
             'wtot_FP': wtot_FP_one_sample,
             'num_FP': num_FP,
             'wtot_FN': sample_wtot_FN,
@@ -788,7 +805,13 @@ def main():
     
     for idx, tool_name in enumerate(tools):
         print(f"\nEvaluating {tool_name}...", file=sys.stderr)
-        
+
+        # A failed tool run has no fit to score: it adds no rows (the report lists it as failed)
+        reason = tool_failure(args.tool_results[idx])
+        if reason:
+            print(f"  {tool_name} failed in this run, nothing to evaluate: {reason}", file=sys.stderr)
+            continue
+
         # Load tool-specific data
         print(f"  Loading results from {args.tool_results[idx]}...", file=sys.stderr)
         df_fitted = load_tool_results(args.tool_results[idx])
@@ -830,7 +853,7 @@ def main():
         f.write('TAE\tnRMSE\tweight_tot\tn_eff\t')
         f.write('P\tR\tS\tF1\tMCC\t')
         f.write('MAE_active\twtot_FP\tnum_FP\twtot_FN\tnum_FN\tnum_TP\tnum_TN\t')
-        f.write('theoretical_max_Recall\ttheoretical_max_Precision\ttheoretical_max_F1\ttheoretical_max_MCC\ttheoretical_min_FN\t')
+        f.write('theoretical_max_Recall\ttheoretical_max_Precision\ttheoretical_max_F1\ttheoretical_max_MCC\ttheoretical_min_FN\ttheoretical_min_TAE\t')
         f.write('highest_ENP_known\thighest_ENP_unknown\n')
 
         for sm in all_per_sample_metrics:
@@ -840,7 +863,7 @@ def main():
             f.write(f"{sm['MAE_active']:.4f}\t{sm['wtot_FP']:.4f}\t{sm['num_FP']}\t{sm['wtot_FN']:.4f}\t{sm['num_FN']}\t")
             f.write(f"{sm['num_TP']}\t{sm['num_TN']}\t")
             f.write(f"{sm['theoretical_max_Recall']:.4f}\t{sm['theoretical_max_Precision']:.4f}\t")
-            f.write(f"{sm['theoretical_max_F1']:.4f}\t{sm['theoretical_max_MCC']:.4f}\t{sm['theoretical_min_FN']}\t")
+            f.write(f"{sm['theoretical_max_F1']:.4f}\t{sm['theoretical_max_MCC']:.4f}\t{sm['theoretical_min_FN']}\t{sm['theoretical_min_TAE']:.4f}\t")
             f.write(f"{_fmt(sm['highest_ENP_known'])}\t{_fmt(sm['highest_ENP_unknown'])}\n")
 
     print(f"\nEvaluation complete. Per-sample metrics written to {args.output}", file=sys.stderr)
