@@ -85,7 +85,7 @@ def generate_synthetic_catalog_from_contributions(
     elif signature_contribs.ndim == 2:
         for i in range(signature_contribs.shape[0]):
             catalogs.append(generate_synthetic_mutations(
-                rng, f'S{i}', mutations_per_sample.iloc[i],
+                rng, signature_contribs.index[i], mutations_per_sample.iloc[i],
                 signature_contribs.iloc[i], signature_profiles, epsilon
             ))
     else:
@@ -203,6 +203,24 @@ def load_signature_data(
            pd.read_csv(contrib_path, sep='\t', index_col=0)
 
 
+def check_signatures_have_profiles(
+    signature_profiles: pd.DataFrame,
+    contribs: pd.DataFrame,
+    signature_file: str,
+    contributions_file: str,
+) -> None:
+    """Stop if a signature in the weights is missing from the signature catalogue,
+    e.g. SBS40 (COSMIC v3.3) when the catalogue is v3.4, which splits it into SBS40a/b/c."""
+    used = [s for s in contribs.columns if (contribs[s] > 0).any()]
+    missing = sorted(set(used) - set(signature_profiles.columns))
+    if missing:
+        print(f"WARNING: COSMIC version mismatch. {contributions_file} uses signatures that are "
+              f"not in {signature_file}: {', '.join(missing)}", file=sys.stderr)
+        print("  Use a catalogue with the same COSMIC version (cosmic_signatures.base_file, "
+              "or signature_file for a custom dataset).", file=sys.stderr)
+        sys.exit(1)
+
+
 def create_synthetic_catalog(
     signature_contributions_file: str,
     num_samples: int,
@@ -244,6 +262,8 @@ def create_synthetic_catalog(
     print('Loading signature profiles and empirical contributions...')
     signature_profiles, empirical_contribs = load_signature_data(input_sigs, signature_contributions_file)
     print(f'  {signature_profiles.shape[1]} signatures | {empirical_contribs.shape[0]} empirical samples')
+    check_signatures_have_profiles(signature_profiles, empirical_contribs, input_sigs,
+                                   signature_contributions_file)
 
     # Each sample i uses sub-RNGs seeded with [random_seed, 0, i] for index selection
     # and [random_seed, 1, i] for unknown-signature assignment, so sample i's weights
