@@ -10,6 +10,7 @@ This module provides helper functions for:
 
 import os
 import re
+import sys
 
 
 # ==============================================================================
@@ -121,6 +122,14 @@ _has_no_ground_truth_data = (
     "realsim" in config.get("data_types", []) or "external" in config.get("data_types", [])
 )
 
+# One HTML report per data type with known answers: file name and title for each
+REPORTS = {
+    "synthetic": ("realistic_simulations", "Realistic simulations"),
+    "custom": ("synthetic", "Synthetic"),
+}
+report_names = [REPORTS[dt][0] for dt in REPORTS if dt in config.get("data_types", ["synthetic"])]
+report_data_type = {name: dt for dt, (name, _) in REPORTS.items()}
+
 
 # ==============================================================================
 # CROSS-TOOL AGREEMENT (no-ground-truth data types: realsim, external)
@@ -163,8 +172,8 @@ def get_agreement_files(suffix="tool_agreement"):
 # ==============================================================================
 
 def _get_gen_name(tool_key):
-    """Derive input data format name from tool_formats config."""
-    for format_data in config.get("tool_formats", {}).values():
+    """Name of the counts file a tool reads, e.g. deconstructSigs for data_for_deconstructSigs.dat."""
+    for format_data in _format_groups().values():
         if tool_key.lower() in [t.lower() for t in format_data.get("tools", [])]:
             base = os.path.basename(format_data.get("input_data_base", ""))
             m = re.match(r"data_for_(.+)\.dat$", base)
@@ -209,7 +218,7 @@ def get_tool_config(tool_name):
     """Get tool config with inheritance: defaults → format_group → tool_overrides"""
     tool_config = config.get("defaults", {}).copy()
 
-    for format_data in config.get("tool_formats", {}).values():
+    for format_data in _format_groups().values():
         if tool_name.lower() in [t.lower() for t in format_data.get("tools", [])]:
             cs = format_data.get("cosmic_signatures", {}) or {}
             tool_config.update({
@@ -235,6 +244,75 @@ def get_tool_config(tool_name):
 # ==============================================================================
 # INPUT/OUTPUT PATH RESOLUTION
 # ==============================================================================
+
+# Counts file and signature catalogue each input format uses
+FORMAT_FILES = {
+    "tab_with_index": ("data/data_for_deconstructSigs.dat",
+                       "{output_dir}/cosmic_signatures/COSMIC_v3_SBS_GRCh38_tab_with_index.txt"),
+    "csv_no_index": ("data/data_for_MutationalPatterns.dat",
+                     "{output_dir}/cosmic_signatures/COSMIC_v3_SBS_GRCh38_tab_with_index.txt"),
+    "csv_with_index": ("data/data_for_sigfit.dat",
+                       "{output_dir}/cosmic_signatures/COSMIC_v3_SBS_GRCh38_csv_with_index.txt"),
+    "csv_quoted": ("data/data_for_sigLASSO.dat",
+                   "{output_dir}/cosmic_signatures/COSMIC_v3_SBS_GRCh38_csv_quoted.txt"),
+    "signature_tools": ("data/data_for_signature_tools.dat",
+                        "{output_dir}/cosmic_signatures/COSMIC_v3_SBS_GRCh38_tab_with_index.txt"),
+}
+
+# Tools the workflow can run (name as in its result file -> input format).
+# Filled by tool_result() when tools.smk is read.
+REGISTERED_TOOLS = {}
+
+
+def _format_groups():
+    """Tools grouped by input format: the config's tool_formats if it has one, otherwise
+    built from the tool rules."""
+    if config.get("tool_formats"):
+        return config["tool_formats"]
+    groups = {}
+    for tool, fmt in REGISTERED_TOOLS.items():
+        data_file, catalogue = FORMAT_FILES[fmt]
+        group = groups.setdefault(fmt, {"tools": [], "input_data_base": data_file,
+                                        "cosmic_signatures": {"standard": catalogue}})
+        group["tools"].append(tool)
+    return groups
+
+
+# Folder of one fitting run: data type / sample set / signature set / mutations per sample /
+# replicate. Every tool result, log and benchmark path is built from this one template.
+RUN_DIR = os.path.join("{data_type}", "{cancer_type}", "{relevance}", "{num_muts}", "rep_{rep}")
+
+
+def tool_result(tool, name="contribution", input_format=None):
+    """Result file of one tool for one run, e.g. SPA_contribution.dat.
+
+    Tool rules also pass the input format the tool reads, which registers the tool.
+    """
+    if input_format:
+        REGISTERED_TOOLS[tool] = input_format
+    return os.path.join(config["output_dir"], RUN_DIR, f"{tool}_{name}.dat")
+
+
+# Added to the shell command of command-line tools: if the tool fails, write
+# "# TOOL FAILED: <last line of its error log>" to its result file and print it, instead of
+# stopping the workflow, so the HTML report is still built.
+ON_TOOL_FAILURE = (
+    ' || {{ reason=$(tail -n 1 {log.stderr} | tr -s "[:space:]" " "); '
+    'echo "# TOOL FAILED: ${{reason:-see log}}" > {output.result}; '
+    'echo "TOOL FAILED ({rule}): ${{reason:-see log}}" >&2; }}'
+)
+
+
+def tool_logs(tool):
+    """stderr and stdout log files of one tool for one run."""
+    base = os.path.join(config["log_dir"], RUN_DIR, tool.lower())
+    return {"stderr": f"{base}_stderr.log", "stdout": f"{base}_stdout.log"}
+
+
+def tool_benchmark(tool):
+    """Run time and memory file of one tool for one run."""
+    return os.path.join(config["output_dir"], "benchmarks", RUN_DIR, f"{tool}_benchmark.tsv")
+
 
 def get_input_data(tool_key, wildcards):
     """Return input data path based on data_type: synthetic/realsim/samples/external.
@@ -272,8 +350,8 @@ def get_input_data(tool_key, wildcards):
     if override:
         return override
 
-    for format_info in config.get("tool_formats", {}).values():
-        if tool_key in format_info.get("tools", []):
+    for format_info in _format_groups().values():
+        if tool_key.lower() in [t.lower() for t in format_info.get("tools", [])]:
             return format_info.get("input_data_base") or []
     return []
 
@@ -283,15 +361,23 @@ def get_input_data(tool_key, wildcards):
 # ==============================================================================
 
 def _get_format_key(tool_name):
-    """Return the tool_formats group key for a given tool."""
-    for fmt_key, format_data in config.get("tool_formats", {}).items():
+    """Input format of a tool, e.g. tab_with_index."""
+    for fmt_key, format_data in _format_groups().items():
         if tool_name.lower() in [t.lower() for t in format_data.get("tools", [])]:
             return fmt_key
     return None
 
 
-def get_cosmic_signatures(tool_name, relevance, data_type=None, num_muts=None):
-    """Get COSMIC signatures path for tool and relevance (standard/relevant)."""
+def signature_catalogue(data_type=None, dataset=None):
+    """Signature catalogue to use: a custom dataset's signature_file, otherwise base_file."""
+    base_file = config["cosmic_signatures"]["base_file"]
+    if data_type == "custom" and dataset:
+        return config["custom_datasets"][dataset].get("signature_file", base_file)
+    return base_file
+
+
+def get_cosmic_signatures(tool_name, relevance, data_type=None, num_muts=None, dataset=None):
+    """Signature file a tool fits with. Custom datasets get their own file."""
     cs = get_tool_config(tool_name).get("cosmic_signatures", {}) or {}
     base_path = cs.get("standard") or ""
 
@@ -299,6 +385,17 @@ def get_cosmic_signatures(tool_name, relevance, data_type=None, num_muts=None):
         base_path = base_path.format(output_dir=config["output_dir"])
     if base_path.startswith("results/"):
         base_path = base_path.replace("results/", config["output_dir"] + "/", 1)
+
+    if data_type == "custom" and dataset:
+        # Same file name as the tool's standard file, with _CUSTOM_{dataset} added
+        if base_path.startswith(config["output_dir"]):
+            return base_path.replace(".txt", f"_CUSTOM_{dataset}.txt")
+        fmt_key = _get_format_key(tool_name)
+        stem = os.path.splitext(os.path.basename(base_path))[0]
+        return os.path.join(
+            config["output_dir"], "cosmic_signatures",
+            f"{stem}_{fmt_key}_CUSTOM_{dataset}.txt"
+        )
 
     if relevance == "relevant":
         if base_path.startswith(config["output_dir"]):
@@ -331,7 +428,7 @@ def get_selected_tools():
                  else tools_config.get("selection", "all") if isinstance(tools_config, dict)
                  else "all")
 
-    all_tools = [t for fmt in config.get("tool_formats", {}).values()
+    all_tools = [t for fmt in _format_groups().values()
                  for t in fmt.get("tools", [])]
     all_tools_lower = {t.lower() for t in all_tools}
 
@@ -339,10 +436,18 @@ def get_selected_tools():
         return all_tools
     if isinstance(selection, list):
         # Case-insensitive membership check so "SPA"/"MuSiCal" in tools_to_run
-        # match "spa"/"musical" in tool_formats, while preserving the case from
+        # match "spa"/"musical" in the known tools, while preserving the case from
         # tools_to_run (which must match the hardcoded output filenames in tools.smk).
+        unknown = [t for t in selection if t.lower() not in all_tools_lower]
+        if unknown and not _warned_unknown_tools:
+            print(f"WARNING: tools_to_run entries that are not known tools are skipped: "
+                  f"{', '.join(unknown)}. Known tools: {', '.join(all_tools)}", file=sys.stderr)
+            _warned_unknown_tools.append(True)
         return [t for t in selection if t.lower() in all_tools_lower]
     return all_tools
+
+
+_warned_unknown_tools = []  # so the warning above is printed once per run
 
 
 # Pre-joined string for passing out-of-reference signatures to shell commands
