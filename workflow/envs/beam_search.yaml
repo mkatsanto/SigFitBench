@@ -1,0 +1,10 @@
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - python>=3.8
+  - pandas<3
+  - numpy
+  - pip
+  - pip:
+    - git+ssh://git@github.com/sirenfrappe/SigProfilerAssignment-beam-search.git@codex/beam-search

@@ -3,21 +3,24 @@ channels:
   - bioconda
 channel_priority: strict
 dependencies:
-  - r-base>=4.0
+  - r-base>=4.4
   - r-dplyr
   - r-optparse
-  # Without pinning these, conda can solve an env where R's stats.so links
-  # against libblas.3.dylib but nothing ships it, breaking every R call.
   - libblas
   - liblapack
-  # sigminer and NMF (no osx-arm64 conda build for either) are installed
-  # from source by sigminer.post-deploy.sh; r-remotes/r-biocmanager/
-  # compilers are for that step.
+  # sigminer, NMF and maftools are installed by sigminer.post-deploy.sh (conda has no
+  # Apple Silicon build of NMF, and its only maftools build would force an old R)
   - r-remotes
   - r-biocmanager
   - compilers
-  # sigminer's remaining Imports, installed via conda so only sigminer
-  # itself (and NMF) need to be built in post-deploy.sh.
+  # Used by sigminer's fitting methods: NNLS, QP and SA
+  - r-nnls
+  - r-quadprog
+  - r-gensa
+  # Needed by NMF
+  - bioconductor-biobase
+  - r-cluster
+  # sigminer's other dependencies
   - r-cli
   - r-cowplot
   - r-data.table
@@ -25,7 +28,6 @@ dependencies:
   - r-future
   - r-ggplot2
   - r-ggpubr
-  - bioconductor-maftools
   - r-magrittr
   - r-parallelly
   - r-purrr
