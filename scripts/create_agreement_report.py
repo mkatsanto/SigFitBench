@@ -371,7 +371,7 @@ def create_report_intro(df: pd.DataFrame) -> str:
 
 
 def generate_report(df: pd.DataFrame, df_sig: pd.DataFrame, df_activity: pd.DataFrame, df_sw: pd.DataFrame, output_file: str, title: str, subtitle: str) -> None:
-    colors = get_tool_colors()
+    colors = get_tool_colors(sorted(set(df["tool_1"]) | set(df["tool_2"])) if not df.empty else None)
 
     if df.empty:
         content = (
