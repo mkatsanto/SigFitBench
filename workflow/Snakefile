@@ -3,7 +3,30 @@
 import os
 import pandas as pd
 import shutil
+import sys
 from snakemake.utils import validate
+
+
+def fix_macos_benchmark_memory():
+    """Let benchmark: record max_rss/max_vms on macOS (uss, pss and io stay 0)."""
+    import collections
+    import psutil
+
+    MemoryInfo = collections.namedtuple(
+        "MemoryInfo", ["rss", "vms", "pfaults", "pageins", "uss", "pss"])
+
+    def memory_info_with_pss(process):
+        memory = process.memory_info()
+        return MemoryInfo(*memory, uss=0, pss=0)
+
+    def io_counters_not_available(process):
+        raise NotImplementedError
+
+    psutil.Process.memory_full_info = memory_info_with_pss
+    psutil.Process.io_counters = io_counters_not_available
+
+if sys.platform == "darwin":  # "darwin" = macOS
+    fix_macos_benchmark_memory()
 
 
 configfile: os.path.join(workflow.basedir, "..", "config", "config.yaml")
@@ -25,10 +48,14 @@ if "output_dir" in config:
 
 # Include all rules from the rules directory
 include: "rules/common.smk"
+include: "rules/tools.smk"            # first: registers the tools the other rule files use
+# in-house methods, included only if present (the file is not in the public repository)
+if os.path.exists(os.path.join(workflow.basedir, "rules", "inhouse_tools.smk")):
+    include: "rules/inhouse_tools.smk"
 include: "rules/cosmic_signatures.smk"
 include: "rules/relevant_signatures.smk"
 include: "rules/simulation.smk"
-include: "rules/tools.smk"
+include: "rules/vcf_input.smk"
 include: "rules/evaluation.smk"
 
 # Load sample table if it exists and is populated
@@ -68,55 +95,43 @@ rule all:
     input:
         # Tool fitting outputs (data generation + tool execution)
         tool_results = expand(
-            os.path.join(
-                config['output_dir'],
-                "{data_type}",
-                "{cancer_type}",
-                "{relevance}",
-                "{identifier}",
-                "rep_{rep}",
-                "{tool}_contribution.dat"
-            ),
+            tool_result("{tool}"),
             data_type=active_data_types,
             cancer_type=config.get("cancer_types", ["Head-SCC"]),
-            identifier=config["num_muts"],
+            num_muts=config["num_muts"],
             relevance=config.get("relevance_modes", ["standard", "relevant"]),
             tool=get_selected_tools(),
             rep=range(config.get("num_realizations", 1))
         ),
         # Custom fixed-weights tool results (data_type == "custom")
-        custom_tool_results = [
-            os.path.join(
-                config['output_dir'], "custom", ds_name,
-                relevance, str(num_muts), f"rep_{rep}",
-                f"{tool}_contribution.dat"
-            )
-            for ds_name in config.get("custom_datasets", {})
-            for relevance in config.get("relevance_modes", ["standard"])
-            for num_muts in config["num_muts"]
-            for rep in range(config.get("num_realizations", 1))
-            for tool in get_selected_tools()
-        ] if "custom" in config.get("data_types", []) else [],
+        custom_tool_results = expand(
+            tool_result("{tool}"),
+            data_type="custom",
+            cancer_type=list(config.get("custom_datasets", {})),
+            relevance=config.get("relevance_modes", ["standard"]),
+            num_muts=config["num_muts"],
+            rep=range(config.get("num_realizations", 1)),
+            tool=get_selected_tools(),
+        ) if "custom" in config.get("data_types", []) else [],
         external_tool_results = expand(
-            os.path.join(
-                config['output_dir'], "external", "{cancer_type}",
-                "{relevance}", "none", "rep_0", "{tool}_contribution.dat"
-            ),
+            tool_result("{tool}"),
+            data_type="external",
+            num_muts="none",
+            rep=0,
             cancer_type=get_all_external_cancer_types(),
             relevance=config.get("relevance_modes", ["standard"]),
             tool=get_selected_tools(),
         ) if "external" in config.get("data_types", []) else [],
         # Real-sample tool results (data_type == "realsim", rep always 0, no ground truth)
-        realsim_tool_results = [
-            os.path.join(
-                config['output_dir'], "realsim", cancer_type,
-                relevance, "none", "rep_0",
-                f"{tool}_contribution.dat"
-            )
-            for cancer_type in get_realsim_cancer_types()
-            for relevance in config.get("relevance_modes", ["standard"])
-            for tool in get_selected_tools()
-        ] if "realsim" in config.get("data_types", []) else [],
+        realsim_tool_results = expand(
+            tool_result("{tool}"),
+            data_type="realsim",
+            num_muts="none",
+            rep=0,
+            cancer_type=get_realsim_cancer_types(),
+            relevance=config.get("relevance_modes", ["standard"]),
+            tool=get_selected_tools(),
+        ) if "realsim" in config.get("data_types", []) else [],
         # Ground-truth-based summary + report (synthetic/custom only — realsim/external
         # have no ground truth, so compute_summary_metrics would have nothing to
         # aggregate and get_eval_files() returns []; only request these when there's
@@ -130,10 +145,17 @@ rule all:
             if _has_ground_truth_data else []
         ),
         bootstrap_quality = os.path.join(config['output_dir'], "all_bootstrap_quality.tsv") if config.get("evaluation", {}).get("run_bootstrap_quality", False) else [],
-        html_report=(
-            os.path.join(config['output_dir'], "sigfitbench_report.html")
+        # Wall time + peak memory per tool run (independent of ground truth, so requested
+        # whenever there's anything for the tool rules to have benchmarked).
+        tool_benchmarks = (
+            os.path.join(config['output_dir'], "all_tool_benchmarks.tsv")
             if _has_ground_truth_data else []
         ),
+        # One report per data type: realistic simulations, synthetic
+        html_reports=[
+            os.path.join(config['output_dir'], f"sigfitbench_report_{name}.html")
+            for name in report_names
+        ],
         # Cross-tool agreement summary + report (realsim/external only — no ground
         # truth, so tools are compared to each other instead of to a known answer).
         tool_agreement = (
@@ -153,6 +175,6 @@ rule all:
             if _has_no_ground_truth_data else []
         ),
         agreement_report = (
-            os.path.join(config['output_dir'], "sigfitbench_agreement_report.html")
+            os.path.join(config['output_dir'], "sigfitbench_report_real_samples.html")
             if _has_no_ground_truth_data else []
         ),

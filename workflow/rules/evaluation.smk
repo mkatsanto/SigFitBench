@@ -23,17 +23,15 @@ wildcard_constraints:
 rule evaluate_tool_performance:
     """Evaluate signature fitting performance for a specific tool and dataset"""
     input:
-        tool_results=os.path.join(
-            config['output_dir'],
-            "{data_type}", "{cancer_type}", "{relevance}", "{num_muts}", "rep_{rep}",
-            "{tool}_contribution.dat"
-        ),
+        tool_results=tool_result("{tool}"),
         true_weights=lambda wildcards: os.path.join(
             config['output_dir'], "generated_data", wildcards.data_type,
             f"weights_{wildcards.cancer_type}-w_{'0' if wildcards.data_type == 'realsim' else wildcards.rep}-{wildcards.num_muts}.dat"
         ),
-        reference_signatures=lambda wildcards: get_cosmic_signatures(wildcards.tool, wildcards.relevance),
-        cosmic_file=config['cosmic_signatures']['base_file'],
+        reference_signatures=lambda wildcards: get_cosmic_signatures(
+            wildcards.tool, wildcards.relevance, data_type=wildcards.data_type, dataset=wildcards.cancer_type
+        ),
+        cosmic_file=lambda wildcards: signature_catalogue(wildcards.data_type, wildcards.cancer_type),
         script=os.path.join(workflow.basedir, "..", "scripts", "evaluate_tool_performance.py")
     output:
         per_sample_metrics=os.path.join(
@@ -71,13 +69,11 @@ rule evaluate_tool_performance:
 rule assess_fit_quality_bootstrap:
     """Assess signature fitting quality using bootstrap resampling."""
     input:
-        tool_results=os.path.join(
-            config['output_dir'],
-            "{data_type}", "{cancer_type}", "{relevance}", "{num_muts}", "rep_{rep}",
-            "{tool}_contribution.dat"
-        ),
+        tool_results=tool_result("{tool}"),
         input_catalog=lambda wildcards: get_input_data(wildcards.tool.lower(), wildcards),
-        reference_signatures=lambda wildcards: get_cosmic_signatures(wildcards.tool, wildcards.relevance),
+        reference_signatures=lambda wildcards: get_cosmic_signatures(
+            wildcards.tool, wildcards.relevance, data_type=wildcards.data_type, dataset=wildcards.cancer_type
+        ),
         script=os.path.join(workflow.basedir, "..", "scripts", "assess_fit_quality_bootstrap.py")
     output:
         assessment=os.path.join(
@@ -166,6 +162,57 @@ rule compute_summary_metrics:
         > {log.stdout} 2> {log.stderr}"
 
 
+# Benchmark TSVs for the uniform (non-custom) data types, built the same way get_eval_files()
+# and rule all build their equivalent lists.
+_benchmark_files = expand(
+    tool_benchmark("{tool}"),
+    data_type=active_data_types,
+    cancer_type=config.get("cancer_types", ["Head-SCC"]),
+    num_muts=config["num_muts"],
+    relevance=config.get("relevance_modes", ["standard"]),
+    tool=get_selected_tools(),
+    rep=range(config.get("num_realizations", 1)),
+)
+# "custom" isn't part of active_data_types (dataset name stands in for cancer_type, no
+# num_muts/rep sweep shared with the others), so it's appended separately -- same reason
+# get_eval_files() and rule all's custom_tool_results handle it as its own list
+# comprehension. Without this, a custom-only run (data_types: ["custom"]) leaves
+# active_data_types empty and this rule would get zero input files.
+if "custom" in config.get("data_types", []):
+    _benchmark_files += expand(
+        tool_benchmark("{tool}"),
+        data_type="custom",
+        cancer_type=list(config.get("custom_datasets", {})),
+        relevance=config.get("relevance_modes", ["standard"]),
+        num_muts=config["num_muts"],
+        rep=range(config.get("num_realizations", 1)),
+        tool=get_selected_tools(),
+    )
+
+
+rule aggregate_tool_benchmarks:
+    """Concatenate every tool rule's benchmark TSV (wall time + peak memory, written by
+    Snakemake's `benchmark:` directive in tools.smk) into one summary table."""
+    input:
+        benchmark_files=_benchmark_files,
+        script=os.path.join(workflow.basedir, "..", "scripts", "aggregate_tool_benchmarks.py")
+    output:
+        os.path.join(config['output_dir'], "all_tool_benchmarks.tsv")
+    log:
+        stderr=os.path.join(config["log_dir"], "aggregate_tool_benchmarks.stderr.log"),
+        stdout=os.path.join(config["log_dir"], "aggregate_tool_benchmarks.stdout.log")
+    conda:
+        os.path.join(workflow.basedir, "envs", "python.yaml")
+    threads: 1
+    resources:
+        mem_mb=lambda wildcards, attempt: 2000 * attempt,
+    shell:
+        "(python '{input.script}' \
+        --input-files {input.benchmark_files} \
+        --output {output}) \
+        > {log.stdout} 2> {log.stderr}"
+
+
 rule aggregate_bootstrap_quality:
     """Aggregate bootstrap quality assessment results across all tools and conditions"""
     input:
@@ -208,10 +255,8 @@ rule evaluate_tool_agreement:
     (realsim or external without ground_truth)."""
     input:
         tool_results=lambda wildcards: expand(
-            os.path.join(
-                config['output_dir'], "{data_type}", "{cancer_type}", "{relevance}",
-                "{num_muts}", "rep_0", "{tool}_contribution.dat"
-            ),
+            tool_result("{tool}"),
+            rep=0,
             data_type=wildcards.data_type,
             cancer_type=wildcards.cancer_type,
             relevance=wildcards.relevance,
@@ -355,11 +400,7 @@ rule aggregate_signature_weights:
 
 
 rule create_agreement_report:
-    """HTML report for no-ground-truth data (realsim/external): cross-tool
-    agreement heatmaps instead of TAE/Precision/Recall against a known answer.
-    Deliberately separate from create_html_report (the simulation/ground-truth
-    report) — different input, different script, no shared code path beyond
-    importing get_html_template()/get_tool_colors() for a consistent look."""
+    """HTML report for real samples (no known answer): compares the tools with each other."""
     input:
         tool_agreement=os.path.join(config['output_dir'], "all_tool_agreement.tsv"),
         signature_calls=os.path.join(config['output_dir'], "all_signature_calls.tsv"),
@@ -367,10 +408,10 @@ rule create_agreement_report:
         signature_weights=os.path.join(config['output_dir'], "all_signature_weights.tsv"),
         script=os.path.join(workflow.basedir, "..", "scripts", "create_agreement_report.py")
     output:
-        os.path.join(config['output_dir'], "sigfitbench_agreement_report.html")
+        os.path.join(config['output_dir'], "sigfitbench_report_real_samples.html")
     params:
-        title="SigFitBench Cross-Tool Agreement Report",
-        subtitle="No-ground-truth comparison (realsim / external)"
+        title="SigFitBench: Real samples",
+        subtitle="Agreement between tools (no known answer)"
     log:
         stderr=os.path.join(config["log_dir"], "agreement_report.stderr.log"),
         stdout=os.path.join(config["log_dir"], "agreement_report.stdout.log")
@@ -395,20 +436,24 @@ rule create_agreement_report:
 # ==============================================================================
 
 rule create_html_report:
-    """Create comprehensive HTML report with interactive visualizations"""
+    """HTML report for one data type with known answers (realistic simulations or synthetic)."""
     input:
         summaries=os.path.join(config['output_dir'], "all_evaluation_metrics.tsv"),
         per_sample_metrics=os.path.join(config['output_dir'], "all_per_sample_metrics.tsv"),
+        tool_benchmarks=os.path.join(config['output_dir'], "all_tool_benchmarks.tsv"),
         config_file=workflow.configfiles[0] if workflow.configfiles else []
     output:
-        report=os.path.join(config['output_dir'], "sigfitbench_report.html")
+        report=os.path.join(config['output_dir'], "sigfitbench_report_{report}.html")
+    wildcard_constraints:
+        report="|".join(name for name, _ in REPORTS.values())
     params:
-        title="SigFitBench Analysis Report",
-        subtitle="Mutational Signature Fitting Tool Comparison and Evaluation",
+        data_type=lambda wildcards: report_data_type[wildcards.report],
+        title=lambda wildcards: "SigFitBench: " + REPORTS[report_data_type[wildcards.report]][1],
+        subtitle="Mutational signature fitting tools compared with the known answer",
         results_dir=config['output_dir']
     log:
-        stderr=os.path.join(config["log_dir"], "html_report.stderr.log"),
-        stdout=os.path.join(config["log_dir"], "html_report.stdout.log")
+        stderr=os.path.join(config["log_dir"], "html_report_{report}.stderr.log"),
+        stdout=os.path.join(config["log_dir"], "html_report_{report}.stdout.log")
     conda:
         os.path.join(workflow.basedir, "envs", "python.yaml")
     threads: 1

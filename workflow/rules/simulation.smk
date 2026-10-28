@@ -4,28 +4,14 @@
 import os
 
 
-def _custom_mode_args(wildcards):
-    """Return CLI args string for the active custom mode.
-
-    Combinations (combinations_file key):
-        → --signature_contributions_file path/to/file.dat
-          Each sample randomly draws one row from the table (same logic as tissue data).
-    """
+def _custom_weights_file(wildcards):
+    """The custom dataset's table of signature weights."""
     ds = config["custom_datasets"][wildcards.cancer_type]
-
     if "combinations_file" not in ds:
         raise ValueError(
             f"custom_datasets[{wildcards.cancer_type}] must have 'combinations_file'"
         )
-    return f"--signature_contributions_file {ds['combinations_file']}"
-
-def _custom_out_of_reference_weights(wildcards):
-    ds = config["custom_datasets"][wildcards.cancer_type]
-    return ds.get("out_of_reference_weights", [])  # no unknowns by default for custom datasets
-
-def _custom_out_sigs(wildcards):
-    ds = config["custom_datasets"][wildcards.cancer_type]
-    return ds.get("out_of_reference_sigs", [])
+    return ds["combinations_file"]
 
 # Data generation rules
 rule ms_create_synthetic_catalog:
@@ -129,9 +115,8 @@ rule prepare_external_catalog:
     fit as one flat dataset named after the dataset key, unchanged from before.
     num_muts and rep are always "none"/0 in the output path (like realsim, external
     has no per-sample target mutation count or independent realizations, so both are
-    fixed structural placeholders in the shared
-    {data_type}/{cancer_type}/{relevance}/{num_muts}/rep_{rep}/ output layout every
-    tool rule uses, not configurable fields). Evaluated via cross-tool agreement,
+    fixed placeholders in the shared output layout every tool rule uses (RUN_DIR in
+    common.smk), not configurable fields). Evaluated via cross-tool agreement,
     same as realsim, since there's no ground truth to compare against.
     """
     input:
@@ -171,17 +156,12 @@ rule prepare_external_catalog:
 
 
 rule create_custom_catalog:
-    """Generate synthetic catalog from a user-specified custom signature configuration.
-
-    Each dataset must give a 'combinations_file' (TSV: rows=combinations, cols=signatures);
-    every sample randomly draws one row from the table, same logic as tissue data.
-
-    Per-sample variation in the count matrix comes from multinomial mutation sampling.
-    Per-dataset out_of_reference_sigs/weights override the top-level config values.
-    """
+    """Simulate a custom dataset: each row of its table becomes one sample with num_muts mutations."""
     input:
-        script=os.path.join(workflow.basedir, "..", "scripts", "MS_create_synthetic.py"),
-        input_sigs=config["cosmic_signatures"]["base_file"]
+        script=os.path.join(workflow.basedir, "..", "scripts", "MS_create_custom.py"),
+        helpers=os.path.join(workflow.basedir, "..", "scripts", "MS_create_synthetic.py"),
+        weights_file=_custom_weights_file,
+        input_sigs=lambda wildcards: signature_catalogue("custom", wildcards.cancer_type)
     output:
         weights=os.path.join(config["output_dir"], "generated_data", "custom", "weights_{cancer_type}-w_{rep}-{num_muts}.dat"),
         data_files=expand(
@@ -189,12 +169,8 @@ rule create_custom_catalog:
             format=get_required_output_formats()
         )
     params:
-        num_samples=config.get("num_samples", 100),
         random_seed=config.get("random_seed", 0),
-        output_formats=get_required_output_formats(),
-        mode_args=_custom_mode_args,
-        out_of_reference_weights=_custom_out_of_reference_weights,
-        out_sigs=_custom_out_sigs
+        output_formats=get_required_output_formats()
     conda:
         os.path.join(workflow.basedir, "envs", "python.yaml")
     threads: 1
@@ -205,14 +181,11 @@ rule create_custom_catalog:
         stdout=os.path.join(config["log_dir"], "create_custom_catalog.{cancer_type}.{rep}.{num_muts}.stdout.log")
     shell:
         "(python '{input.script}' \
-        --num_samples {params.num_samples} \
+        --weights_file {input.weights_file} \
         --num_muts {wildcards.num_muts} \
         --output_dir $(dirname {output.weights}) \
-        --cancer_type {wildcards.cancer_type} \
+        --dataset {wildcards.cancer_type} \
         --realization {wildcards.rep} \
         --input_sigs {input.input_sigs} \
         --random_seed {params.random_seed} \
-        --output_formats {params.output_formats} \
-        {params.mode_args} \
-        --out_of_reference_weights {params.out_of_reference_weights} \
-        --out_sigs {params.out_sigs}) > {log.stdout} 2> {log.stderr}"
+        --output_formats {params.output_formats}) > {log.stdout} 2> {log.stderr}"
