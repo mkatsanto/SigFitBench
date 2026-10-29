@@ -57,7 +57,9 @@ jobs:
               status=1
             fi
           done
-          exit $status
+          # No "exit" here: in this login shell it runs ~/.bash_logout, which fails
+          # on GitHub's runners and turns a pass into exit code 1
+          [ "$status" -eq 0 ]
 
   quick-test:
     if: github.event_name == 'workflow_dispatch' && inputs.run_quick_test
