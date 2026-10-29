@@ -28,9 +28,9 @@ from plotly.subplots import make_subplots
 DEFAULT_MIN_CONTRIBUTION = 10.0  # fallback; must match evaluate_tool_performance.py's default
 
 # Names shown in the report for each data type
-DATA_TYPE_LABELS = {'synthetic': 'Realistic simulations', 'custom': 'Synthetic'}
+DATA_TYPE_LABELS = {'realsim': 'Realistic simulations', 'custom': 'Synthetic'}
 DATA_TYPE_NOTES = {
-    'synthetic': 'Signature weights taken from real tumours (PCAWG); mutations drawn from them.',
+    'realsim': 'Signature weights taken from real tumours (PCAWG); mutations drawn from them.',
     'custom': 'Signature weights from your own table; mutations drawn from them.',
 }
 
@@ -2196,7 +2196,7 @@ def create_per_method_sample_plots(df_samples, cancer_type, tools, colors):
 def _load_sample_signature_tables(df_samples, cancer_type, results_dir):
     """Per mutation burden, one row per simulated sample with its mean TAE / F1 / ENP across
     tools and its ground-truth signature set (frozenset of signatures with weight > 0, from
-    results_dir/generated_data/{data_type}/weights_{cancer}-w_{rep}-{burden}.dat — "synthetic"
+    results_dir/generated_data/{data_type}/weights_{cancer}-w_{rep}-{burden}.dat — "realsim"
     and "custom" both have ground truth and use the same layout).
 
     Returns a list of (burden, DataFrame[replicate, sample, TAE, F1?, highest_ENP_known?, sigs])
@@ -2210,7 +2210,7 @@ def _load_sample_signature_tables(df_samples, cancer_type, results_dir):
         return None
     has_rep = 'replicate' in cancer_samples.columns
     metric_cols = [c for c in ['TAE', 'F1', 'highest_ENP_known'] if c in cancer_samples.columns]
-    data_type = cancer_samples['data_type'].iloc[0] if 'data_type' in cancer_samples.columns else 'synthetic'
+    data_type = cancer_samples['data_type'].iloc[0] if 'data_type' in cancer_samples.columns else 'realsim'
     weights_dir = Path(results_dir) / 'generated_data' / data_type
 
     tables = []
@@ -4764,9 +4764,9 @@ def build_signature_activity_data(results_dir, df, tools, colors, out_of_referen
     Signature Activity widget (see create_signature_activity_widget below).
 
     Reads two things straight off disk (these aren't in any aggregated dataframe
-    already loaded by the report). Both "synthetic" and "custom" data types have
+    already loaded by the report). Both "realsim" and "custom" data types have
     ground truth and use the same directory layout (just "custom" uses the dataset
-    name where "synthetic" uses a cancer type), so both are included here:
+    name where "realsim" uses a cancer type), so both are included here:
       - ground truth: results_dir/generated_data/{data_type}/weights_{cancer}-w_{rep}-{burden}.dat
         (signature fractions per sample; multiplied by burden to get mutation counts)
       - predictions: results_dir/{data_type}/{cancer}/{relevance}/{burden}/rep_{rep}/{tool}_contribution.dat
@@ -4778,19 +4778,19 @@ def build_signature_activity_data(results_dir, df, tools, colors, out_of_referen
     the raw >0 cut — it's what was actually simulated, not a detection call.
 
     Returns a JSON string ready to embed client-side, or None if no ground-truth data
-    (synthetic or custom) is available for this run (e.g. real-sample-only reports).
+    (realsim or custom) is available for this run (e.g. real-sample-only reports).
     """
     min_contribution = DEFAULT_MIN_CONTRIBUTION if min_contribution is None else min_contribution
     if not results_dir or df is None or df.empty:
         return None
 
-    gt_df = df[df['data_type'].isin(['synthetic', 'custom'])] if 'data_type' in df.columns else df
+    gt_df = df[df['data_type'].isin(['realsim', 'custom'])] if 'data_type' in df.columns else df
     if gt_df.empty or 'cancer_type' not in gt_df.columns or 'num_muts' not in gt_df.columns:
         return None
 
     has_data_type_col = 'data_type' in gt_df.columns
     cancer_data_types = sorted(gt_df[['cancer_type', 'data_type']].drop_duplicates().itertuples(index=False)) \
-        if has_data_type_col else [(c, 'synthetic') for c in sorted(gt_df['cancer_type'].unique())]
+        if has_data_type_col else [(c, 'realsim') for c in sorted(gt_df['cancer_type'].unique())]
     burdens = sorted(int(b) for b in gt_df['num_muts'].unique())
     if selected_rep is None:
         selected_rep = int(gt_df['replicate'].min()) if 'replicate' in gt_df.columns else 0
@@ -5504,7 +5504,7 @@ def generate_report(df, output_file, title, subtitle, df_per_sample=None, df_boo
     appendix_html = create_appendix_section(df, df_raw, unknown_sig_config, cosmic_version_label, min_contribution)
 
     # Build visualizations section — one sub-section per data_type when multiple exist
-    data_types = sorted(df['data_type'].unique()) if 'data_type' in df.columns else ['synthetic']
+    data_types = sorted(df['data_type'].unique()) if 'data_type' in df.columns else ['realsim']
     if len(data_types) <= 1:
         visualizations_html = create_visualizations_section(
             df, df_per_sample, df_bootstrap, df_raw, results_dir,

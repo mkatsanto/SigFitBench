@@ -1,0 +1,64 @@
+# ============================================================================
+# Scenario: unknown signatures
+# How do the tools cope when part of a tumour's mutations come from
+# signatures they do not know about? The signatures listed in
+# out_of_reference_sigs are removed from the reference the tools fit against.
+# Each value in out_of_reference_weights adds one of them, picked at random,
+# to every sample with that share of its mutations.
+# To compare levels (0%, 10%, 20%, ...), run a copy of this file per level
+# with its own output_dir.
+#
+#   snakemake --profile profiles/local-conda --snakefile workflow/Snakefile \
+#     --configfile config/scenarios/unknown_signatures.yaml
+#
+# Guide: docs/guide.md#unknown-signatures
+# ============================================================================
+
+tools_to_run: ["MutationalPatterns", "deconstructSigs", "SPA", "MuSiCal", "signature_tools", "sigminer"]
+
+data_types: ["realsim"]
+relevance_modes: ["standard"]
+
+cancer_types: ["Head-SCC", "Breast"]
+num_muts: [2000, 20000]
+num_samples: 20
+num_realizations: 1
+
+# Signatures the tools never see (recent or rare COSMIC signatures)
+out_of_reference_sigs: ["SBS10c", "SBS10d", "SBS86", "SBS87", "SBS88", "SBS89",
+                        "SBS90", "SBS91", "SBS92", "SBS93", "SBS94", "SBS95"]
+# One unknown signature per sample, carrying 20% of its mutations.
+# [0.1, 0.1] would add two unknown signatures, 10% each.
+out_of_reference_weights: [0.2]
+
+random_seed: 0
+
+output_dir: "results_unknown_signatures"
+log_dir: "logs_unknown_signatures"
+
+# ---------------------------------------------------------------------------
+# Shared settings (the same in every scenario)
+# ---------------------------------------------------------------------------
+
+input_dir: "input"
+signature_contributions_dir: "cosmic_tissue_data"
+cosmic_signatures:
+  base_file: "input/COSMIC_v3.3.1_SBS_GRCh38.txt"
+matrix_order: "input/mut_matrix_order_MutationalPatterns.dat"
+wgs_or_wes: "WGS"
+epsilon: 0.00000001
+
+relevant_signatures: null
+
+evaluation:
+  min_contribution: 10.0
+  run_bootstrap_quality: false
+  num_bootstrap: 1
+
+tool_overrides:
+  mutationalpatterns:
+    strict: true
+  sigminer:
+    method: "NNLS"
+  signature_tools:
+    nparallel: 2

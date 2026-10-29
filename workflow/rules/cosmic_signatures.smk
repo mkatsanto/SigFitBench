@@ -13,7 +13,7 @@ import os
 
 wildcard_constraints:
     format=r"(tab_with_index|csv_no_index|csv_with_index|csv_quoted)",
-    data_type=r"(synthetic|realsim)",
+    data_type=r"(realsim|real)",
     num_muts=r"(\d+|none)",
     dataset=r"[A-Za-z0-9_-]+"
 

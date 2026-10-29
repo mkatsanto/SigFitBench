@@ -14,26 +14,20 @@ import sys
 
 
 # ==============================================================================
-# ACTIVE DATA TYPES
+# DATA TYPES
+#   realsim - simulated from signature activity in real tumours (known answer)
+#   custom  - simulated from the user's own table of signature mixes (known answer)
+#   real    - real samples from real_datasets (no known answer: tools are compared
+#             with each other)
 # Computed once here so every included rule file can reference active_data_types.
-# realsim (like custom/external) is handled by its own dedicated target block in
-# rule all — it has no ground truth and doesn't use the shared cancer_types/num_muts
-# lists, so it's excluded from the generic per-data-type expansion here.
+# custom and real have their own target blocks in rule all, since they don't use the
+# shared cancer_types list.
 # ==============================================================================
-
-def _realsim_configured():
-    real_samples_cfg = config.get("simulation", {}).get("real_samples", {}) or {}
-    return bool(real_samples_cfg.get("input_real_catalog"))
-
-def get_realsim_cancer_types():
-    """Cancer types to run for realsim, from simulation.real_samples.cancer_types."""
-    return config.get("simulation", {}).get("real_samples", {}).get("cancer_types", [])
-
 
 def _peek_catalog_header(catalog_path):
     """Return the first non-comment, non-blank line of a catalog file (its header row),
     or None if the file can't be read. Used only to detect column-naming convention —
-    doesn't load the full catalog (that's fit_external_catalog.py's job at run time)."""
+    doesn't load the full catalog (that's prepare_real_catalog.py's job at run time)."""
     if not catalog_path or not os.path.exists(catalog_path):
         return None
     with open(catalog_path, "r") as fh:
@@ -44,95 +38,92 @@ def _peek_catalog_header(catalog_path):
     return None
 
 
-_EXTERNAL_CANCER_TYPES_CACHE = {}
+_REAL_CANCER_TYPES_CACHE = {}
 
 
-def get_external_cancer_types(ds_name):
-    """Cancer types (tissues) for one external_datasets entry.
+def get_real_cancer_types(ds_name):
+    """Cancer types (tissues) for one real_datasets entry.
 
-    Auto-detected from the catalog's column headers using the "Tissue::SampleID"
-    convention (same one realsim's PCAWG file uses) — peeks at just the header row,
-    not the whole file. If any column follows that convention, returns the sorted
-    list of distinct tissue prefixes found (per-tissue splitting, like realsim). If
-    none do, returns [ds_name]: the whole dataset is fit as one flat bucket named
-    after the dataset key itself (unsplit — the original external behavior, still
-    correct for catalogs that don't use per-tissue column naming).
+    If the entry lists cancer_types, those are used. Otherwise they are read from the
+    catalog's column headers, which may follow the "Tissue::SampleID" convention (only
+    the header row is read). If any column does, every tissue found is used (one group
+    per tissue). If none do, returns [ds_name]: the whole dataset is fit as one group
+    named after the dataset key.
     """
-    if ds_name in _EXTERNAL_CANCER_TYPES_CACHE:
-        return _EXTERNAL_CANCER_TYPES_CACHE[ds_name]
+    if ds_name in _REAL_CANCER_TYPES_CACHE:
+        return _REAL_CANCER_TYPES_CACHE[ds_name]
 
-    catalog_path = config.get("external_datasets", {}).get(ds_name, {}).get("catalog")
-    header = _peek_catalog_header(catalog_path)
-    result = [ds_name]
-    if header:
-        delim = "\t" if "\t" in header else ("," if "," in header else None)
-        cols = header.split(delim)[1:] if delim else header.split()[1:]  # skip index column
-        tissues = sorted({c.strip().strip('"') .split("::")[0] for c in cols if "::" in c})
-        if tissues:
-            result = tissues
+    ds = config.get("real_datasets", {}).get(ds_name, {}) or {}
+    result = list(ds.get("cancer_types") or [])
+    if not result:
+        header = _peek_catalog_header(ds.get("catalog"))
+        result = [ds_name]
+        if header:
+            delim = "\t" if "\t" in header else ("," if "," in header else None)
+            cols = header.split(delim)[1:] if delim else header.split()[1:]  # skip index column
+            tissues = sorted({c.strip().strip('"') .split("::")[0] for c in cols if "::" in c})
+            if tissues:
+                result = tissues
 
-    _EXTERNAL_CANCER_TYPES_CACHE[ds_name] = result
+    _REAL_CANCER_TYPES_CACHE[ds_name] = result
     return result
 
 
-def get_all_external_cancer_types():
-    """Flat list of "cancer_type" wildcard values across every external_datasets
-    entry — each dataset contributes either its own key (unsplit) or one entry per
-    auto-detected tissue (get_external_cancer_types). Used as the cancer_type
-    dimension in rule all's expand()-based external_tool_results."""
+def get_all_real_cancer_types():
+    """Flat list of "cancer_type" wildcard values across every real_datasets entry —
+    each dataset contributes either its own key (one group) or one entry per tissue
+    (get_real_cancer_types). Used as the cancer_type dimension in rule all."""
     return [
-        ct for ds_name in config.get("external_datasets", {})
-        for ct in get_external_cancer_types(ds_name)
+        ct for ds_name in config.get("real_datasets", {})
+        for ct in get_real_cancer_types(ds_name)
     ]
 
 
-def resolve_external_dataset(cancer_type):
+def resolve_real_dataset(cancer_type):
     """Map a "cancer_type" wildcard back to (dataset_name, tissue_prefix_or_None).
 
-    tissue_prefix is None when the matched dataset isn't using per-tissue splitting
+    tissue_prefix is None when the matched dataset is fit as one group
     (cancer_type == the dataset key itself); otherwise it's the tissue to filter the
-    catalog to (passed to fit_external_catalog.py's --tissue-prefix).
+    catalog to (passed to prepare_real_catalog.py's --tissue-prefix).
     """
-    for ds_name in config.get("external_datasets", {}):
-        tissues = get_external_cancer_types(ds_name)
+    for ds_name in config.get("real_datasets", {}):
+        tissues = get_real_cancer_types(ds_name)
         if tissues == [ds_name] and cancer_type == ds_name:
             return ds_name, None
         if cancer_type in tissues:
             return ds_name, cancer_type
     raise ValueError(
-        f"cancer_type {cancer_type!r} does not match any external_datasets entry "
-        f"(available: {list(config.get('external_datasets', {}).keys())})"
+        f"cancer_type {cancer_type!r} does not match any real_datasets entry "
+        f"(available: {list(config.get('real_datasets', {}).keys())})"
     )
 
 active_data_types = [
-    dt for dt in config.get("data_types", ["synthetic"])
-    if dt not in ("custom", "realsim", "external")
+    dt for dt in config.get("data_types", ["realsim"])
+    if dt not in ("custom", "real")
 ]
 
-if "realsim" in config.get("data_types", []) and not _realsim_configured():
-    logger.warning("realsim requested but simulation.real_samples.input_real_catalog is not set")
+if "real" in config.get("data_types", []) and not config.get("real_datasets"):
+    logger.warning('data_types includes "real" but real_datasets is empty')
 
-# Whether this run has any ground-truth data (synthetic/custom) vs. any no-ground-truth
-# data (realsim/external) — rule all uses these to request the right summary/report
-# target(s) only, instead of unconditionally requesting both (which would crash
-# compute_summary_metrics for a no-ground-truth-only run: get_eval_files() returns []
+# Whether this run has any data with a known answer (realsim/custom) vs. any without
+# (real) — rule all uses these to request the right summary/report target(s) only,
+# instead of unconditionally requesting both (which would crash
+# compute_summary_metrics for a real-only run: get_eval_files() returns []
 # and its --input-files argument requires at least one file).
 _has_ground_truth_data = bool(active_data_types) or "custom" in config.get("data_types", [])
-_has_no_ground_truth_data = (
-    "realsim" in config.get("data_types", []) or "external" in config.get("data_types", [])
-)
+_has_no_ground_truth_data = "real" in config.get("data_types", [])
 
 # One HTML report per data type with known answers: file name and title for each
 REPORTS = {
-    "synthetic": ("realistic_simulations", "Realistic simulations"),
+    "realsim": ("realistic_simulations", "Realistic simulations"),
     "custom": ("synthetic", "Synthetic"),
 }
-report_names = [REPORTS[dt][0] for dt in REPORTS if dt in config.get("data_types", ["synthetic"])]
+report_names = [REPORTS[dt][0] for dt in REPORTS if dt in config.get("data_types", ["realsim"])]
 report_data_type = {name: dt for dt, (name, _) in REPORTS.items()}
 
 
 # ==============================================================================
-# CROSS-TOOL AGREEMENT (no-ground-truth data types: realsim, external)
+# CROSS-TOOL AGREEMENT (no-ground-truth data type: real)
 # ==============================================================================
 
 def get_agreement_tools():
@@ -147,24 +138,13 @@ def get_agreement_files(suffix="tool_agreement"):
     evaluate_tool_agreement rule) for every active no-ground-truth dataset."""
     eval_dir = os.path.join(config['output_dir'], "evaluation")
     relevance_modes = config.get("relevance_modes", ["standard"])
-    files = []
-
-    if "realsim" in config.get("data_types", []):
-        files += expand(
-            os.path.join(eval_dir, f"realsim_{{cancer_type}}_none_{{relevance}}_{suffix}.tsv"),
-            cancer_type=get_realsim_cancer_types(),
-            relevance=relevance_modes,
-        )
-
-    if "external" in config.get("data_types", []):
-        for ds_name in config.get("external_datasets", {}):
-            for cancer_type in get_external_cancer_types(ds_name):
-                files += expand(
-                    os.path.join(eval_dir, f"external_{cancer_type}_none_{{relevance}}_{suffix}.tsv"),
-                    relevance=relevance_modes,
-                )
-
-    return files
+    if "real" not in config.get("data_types", []):
+        return []
+    return expand(
+        os.path.join(eval_dir, f"real_{{cancer_type}}_none_{{relevance}}_{suffix}.tsv"),
+        cancer_type=get_all_real_cancer_types(),
+        relevance=relevance_modes,
+    )
 
 
 # ==============================================================================
@@ -315,27 +295,21 @@ def tool_benchmark(tool):
 
 
 def get_input_data(tool_key, wildcards):
-    """Return input data path based on data_type: synthetic/realsim/samples/external.
+    """Return input data path based on data_type: realsim/custom/real/samples.
 
-    Realsim uses the same {cancer_type}-w_0-{num_muts} naming as synthetic (rep fixed at 0),
-    so downstream rules need no special-casing.
+    real uses the same {cancer_type}-w_0-{num_muts} naming as the simulated types (rep
+    fixed at 0), so downstream rules need no special-casing.
     """
     gen_name = _get_gen_name(tool_key)
     dt = getattr(wildcards, 'data_type', None)
 
-    if dt == 'external':
-        return os.path.join(config["output_dir"], "generated_data", "external",
+    if dt == 'real':
+        return os.path.join(config["output_dir"], "generated_data", "real",
                             f"counts_{wildcards.cancer_type}-w_0-{wildcards.num_muts}_{gen_name}.dat")
 
-    if dt == 'custom':
-        return os.path.join(config["output_dir"], "generated_data", "custom",
-                            f"counts_{wildcards.cancer_type}-w_{wildcards.rep}-{wildcards.num_muts}_{gen_name}.dat")
-
-    if dt in ('synthetic', 'realsim'):
-        # realsim always uses rep 0; synthetic uses the actual rep wildcard
-        rep = 0 if dt == 'realsim' else wildcards.rep
+    if dt in ('realsim', 'custom'):
         return os.path.join(config["output_dir"], "generated_data", dt,
-                            f"counts_{wildcards.cancer_type}-w_{rep}-{wildcards.num_muts}_{gen_name}.dat")
+                            f"counts_{wildcards.cancer_type}-w_{wildcards.rep}-{wildcards.num_muts}_{gen_name}.dat")
 
     if dt == 'samples' and hasattr(wildcards, 'identifier'):
         sample_dir = config.get("sample_input_dir", "input/samples")
@@ -457,9 +431,8 @@ OUT_OF_REF_SIGS_STR = ' '.join(config["out_of_reference_sigs"])
 def get_eval_files():
     """Return all per-sample evaluation TSV paths for aggregation.
 
-    realsim and external have no ground truth and are excluded from active_data_types
-    entirely — they're evaluated separately via the tool-agreement pipeline, not this
-    function.
+    real has no ground truth and is excluded from active_data_types entirely — it's
+    evaluated separately via the tool-agreement pipeline, not this function.
     """
     _eval_dir = os.path.join(config['output_dir'], "evaluation")
     _n_reps = config["num_realizations"]

@@ -1,0 +1,54 @@
+# ============================================================================
+# Scenario: quick test
+# Checks that the installation works. Three fast tools, one tissue, three
+# samples, two mutation counts. Finishes in a few minutes once the tool
+# environments exist.
+#
+#   snakemake --profile profiles/local-conda --snakefile workflow/Snakefile \
+#     --configfile config/scenarios/quick_test.yaml
+#
+# Guide: docs/guide.md#quick-test
+# ============================================================================
+
+tools_to_run: ["MutationalPatterns", "deconstructSigs", "SPA"]
+
+data_types: ["realsim"]
+relevance_modes: ["standard"]
+
+cancer_types: ["Head-SCC"]
+num_muts: [1000, 10000]                  # mutations per sample
+num_samples: 3                           # different signature mixes per tissue
+num_realizations: 1                      # repeated draws of the same mixes
+
+out_of_reference_sigs: []                # no unknown signatures in this test
+out_of_reference_weights: [0]
+
+random_seed: 0
+
+output_dir: "results_quick_test"
+log_dir: "logs_quick_test"
+
+# ---------------------------------------------------------------------------
+# Shared settings (the same in every scenario)
+# ---------------------------------------------------------------------------
+
+input_dir: "input"
+signature_contributions_dir: "cosmic_tissue_data"
+cosmic_signatures:
+  base_file: "input/COSMIC_v3.3.1_SBS_GRCh38.txt"
+matrix_order: "input/mut_matrix_order_MutationalPatterns.dat"
+wgs_or_wes: "WGS"
+epsilon: 0.00000001
+
+relevant_signatures: null
+
+evaluation:
+  min_contribution: 10.0                 # fewer mutations than this = signature counted as absent
+  run_bootstrap_quality: false
+  num_bootstrap: 1
+
+tool_overrides:
+  mutationalpatterns:
+    strict: true
+  sigminer:
+    method: "NNLS"

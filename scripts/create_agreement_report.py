@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Generate an HTML report for no-ground-truth data (realsim / external): cross-tool
+Generate an HTML report for no-ground-truth data (real): cross-tool
 agreement instead of TAE/Precision/Recall against a known answer.
 
 This is deliberately a separate report from create_html_report.py (the
@@ -356,7 +356,7 @@ def create_report_intro(df: pd.DataFrame) -> str:
                 measure against directly.
             </p>
             <ul>
-                <li>Each tab below is one cancer type / external dataset: heatmaps of pairwise tool agreement.</li>
+                <li>Each tab below is one cancer type or real dataset: heatmaps of pairwise tool agreement.</li>
                 <li><strong>Cosine similarity</strong> and <strong>Pearson correlation</strong> measure shape agreement
                     of the fitted signature-weight vectors; <strong>Jaccard</strong> measures overlap of which
                     signatures each tool called "active"; <strong>TAE</strong> measures the raw magnitude of
@@ -376,7 +376,7 @@ def generate_report(df: pd.DataFrame, df_sig: pd.DataFrame, df_activity: pd.Data
     if df.empty:
         content = (
             '<div class="section"><h2>No Data</h2>'
-            "<p>all_tool_agreement.tsv has no rows — check that realsim/external tools actually "
+            "<p>all_tool_agreement.tsv has no rows — check that the tools actually "
             "produced contribution files, and that get_agreement_tools() selected more than one tool "
             "(agreement needs at least 2 tools to compare).</p></div>"
         )
@@ -477,6 +477,6 @@ elif __name__ == "__main__":
     parser.add_argument("--signature-weights", required=True)
     parser.add_argument("--output", required=True)
     parser.add_argument("--title", default="SigFitBench Cross-Tool Agreement Report")
-    parser.add_argument("--subtitle", default="No-ground-truth comparison (realsim / external)")
+    parser.add_argument("--subtitle", default="No-ground-truth comparison (real data)")
     args = parser.parse_args()
     main(args.tool_agreement, args.signature_calls, args.sample_activity, args.signature_weights, args.output, args.title, args.subtitle)

@@ -1,0 +1,5 @@
+sample_id	SBS1	SBS2	SBS5	SBS13	SBS18	SBS40	SBS90
+clock_only	0.5	0	0.5	0	0	0	0
+apobec_high	0.2	0.3	0.2	0.3	0	0	0
+mixed	0.25	0.1	0.25	0.1	0.1	0.2	0
+with_unknown	0.3	0	0.3	0	0.1	0.1	0.2

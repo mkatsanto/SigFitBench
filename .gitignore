@@ -5,6 +5,9 @@
 results_*/
 logs_*/
 
+# Docs website built locally by mkdocs
+site/
+
 # Python
 __pycache__/
 *.py[cod]

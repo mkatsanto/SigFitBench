@@ -1,18 +1,22 @@
 # ============================================================================
-# SigFitTest Workflow Configuration — config_mysigmix.yaml
-# Example "custom" + "synthetic" run: a MySigMix custom dataset drawing from
-# config10.tsv as the signature combinations file, alongside a small standard
-# synthetic run. See README.md for full documentation.
+# SigFitTest Workflow Configuration — config_custom.yaml
+# Example "custom" + "realsim" run: a MySigMix custom dataset drawing from
+# config/custom.tsv as the signature combinations file, alongside a "realsim"
+# run. See README.md for full documentation.
 # ============================================================================
 
 # ============================================================================
 # CORE SETTINGS — always required, regardless of data source
 # ============================================================================
 
-tools_to_run: [ "SPA", "SPA_low", "MuSiCal",  "siglasso"] #,"SigNoise", "FSPA", "mSigAct",] # "StarSignDNA"] #, "mmsig"]
+tools_to_run: ["SPA", "SPA_low", "MuSiCal", "siglasso"]
+# Available: "MutationalPatterns", "deconstructSigs", "SPA", "SPA_low", "MuSiCal",
+#   "signature_tools", "sigminer", "sigfit", "mmsig", "siglasso", "sigspack", "yapsa",
+#   "mSigAct", "StarSignDNA"
+# Not public yet (their install fails until released): "SigID", "SigTrim", "FSPA", "beam_search"
  
-data_types: ["custom", "synthetic"]      # which DATA SOURCE section(s) below are active:
-                                          # "synthetic", "realsim", "external", "custom"
+data_types: ["custom", "realsim"]      # which DATA SOURCE section(s) below are active:
+                                          # "realsim", "custom", "real"
                                           # (combine more than one to run several in one config,
                                           # as this file does)
 
@@ -23,10 +27,9 @@ log_dir: "logs_test"
 random_seed: 6
 
 # ============================================================================
-# DATA SOURCE 1/4 — "synthetic": simulate samples from empirical COSMIC tissue
-# distributions, with known ground truth. Active (data_types above includes it).
-# num_muts/num_samples/num_realizations/out_of_reference_* below are also read
-# by "custom" (DATA SOURCE 4/4) — both data sources share these top-level keys.
+# DATA SOURCE 1/3 — "realsim": simulate samples from signature activity in real
+# tumours, with known ground truth. Active (data_types above includes it).
+# num_muts and num_realizations below are also read by "custom" (DATA SOURCE 3/3).
 # ============================================================================
 
 # Available WGS cancer types: Breast, CNS-GBM, ColoRect-AdenoCA, Eso-AdenoCA, Head-SCC,
@@ -42,41 +45,33 @@ out_of_reference_sigs: ["SBS10c", "SBS10d", "SBS86", "SBS87", "SBS88", "SBS89", 
 out_of_reference_weights: [0]          # fraction of mutations from unknown sigs
 
 # ============================================================================
-# DATA SOURCE 2/4 — "realsim": real PCAWG samples, split per tissue, at their
-# native mutation count (no downsampling, no ground truth — evaluated via
-# cross-tool agreement). Inactive here (not in data_types above).
+# DATA SOURCE 2/3 — "real": real samples (PCAWG or your own catalog), each at
+# its own mutation count. No ground truth — tools are compared with each other.
+# Columns named "Tissue::Sample" are split per tissue; cancer_types (optional)
+# keeps only those tissues. Inactive here (not in data_types above).
 # ============================================================================
 
-# simulation:
-#   real_samples:
-#     input_real_catalog: "real_mutational_catalogs/real_samples_WGS_PCAWG-146_input_profiles.dat"
+# real_datasets:
+#   PCAWG:
+#     catalog: "real_mutational_catalogs/real_samples_WGS_PCAWG-146_input_profiles.dat"
 #     cancer_types: ["Breast-AdenoCA", "Skin-Melanoma"]
 #     # Available in that file: Biliary-AdenoCA, Bladder-TCC, Breast-AdenoCA, CNS-GBM,
 #     # ColoRect-AdenoCA, Eso-AdenoCA, Head-SCC, Liver-HCC, Lung-AdenoCA, Lung-SCC,
 #     # Lymph-BNHL, Panc-AdenoCA, Skin-Melanoma, Stomach-AdenoCA, Uterus-AdenoCA
-
-# ============================================================================
-# DATA SOURCE 3/4 — "external": bring your own real catalog, all samples
-# fit as one flat dataset (no per-tissue splitting like realsim — use that
-# instead if you want the split). No ground truth, cross-tool agreement only.
-# Inactive here (not in data_types above).
-# ============================================================================
-
-# external_datasets:
 #   MyDataset:
-#     catalog: "input/my_catalog.dat"   # contexts x samples TSV/CSV; column headers become sample names verbatim
+#     catalog: "input/my_catalog.dat"   # contexts x samples TSV/CSV
 
 # ============================================================================
-# DATA SOURCE 4/4 — "custom": fully synthetic, drawn from your own precalculated
-# table of signature-weight combinations (real ground truth, same evaluation
-# path as "synthetic"). Active (data_types above includes it).
+# DATA SOURCE 3/3 — "custom": simulated from your own table of signature-weight
+# combinations (known ground truth, same evaluation as "realsim").
+# Active (data_types above includes it).
 # ============================================================================
 # Each dataset needs a 'combinations_file' (rows = samples, columns = signatures).
-# Each row becomes one sample. See README.md "Data Types" for the file format.
+# Each row becomes one sample. See docs/guide.md#custom-mixtures for the file format.
 
 custom_datasets:
   MySigMix:
-    combinations_file: "input/mysigmix/config10.tsv"
+    combinations_file: "config/custom.tsv"
     signature_file: "input/COSMIC_v3.4_SBS_GRCh38.txt"   # optional; default: cosmic_signatures.base_file
 
 # ============================================================================
@@ -122,15 +117,6 @@ tool_overrides:
     threads: 2                         # cores per job (mSigAct tests signature subsets in parallel)
   starsigndna:
     n_iterations: 1000                 # optimisation iterations (StarSignDNA default)
-  signoise:
-    noise_z: 15                        # ADD a signature only if its squared-error drop is >= this x noise per direction (best of ~60 candidates)
-    removal_z: 12                      # KEEP a signature in the model if removing it costs >= this x noise per direction (single test)
-    min_explained_share: 0.1           # ...and it explains >= this share of the non-noise residual
-    background_signatures: ["SBS1", "SBS5"]   # always kept, as in SPA ([] = none)
-    #connected_signatures: true         # add the rest of a group (SBS2/13, SBS7a-d, SBS10a/b, SBS17a/b) if one member is selected, as in SPA
-    weighted_fit: true                 # true = weight each channel by its counting noise (chi-square fit); false = plain L2 fit
-    noise_dispersion: 0           # extra noise per channel = this x expected^2 (0 = counting noise only, no effect)
-    poisson_deviance: true             # with weighted_fit: decide on the Poisson (or negative-binomial) deviance instead of the chi-square
   musical: {}
   sigtrim:
     zscore_threshold: 1.0
@@ -147,7 +133,7 @@ tool_overrides:
 
 tool_formats:
   tab_with_index:
-    tools: ["deconstructsigs", "spa", "spa_low", "fspa", "signoise", "msigact", "starsigndna"]
+    tools: ["deconstructsigs", "spa", "spa_low", "fspa", "msigact", "starsigndna"]
     input_data_base: "data/data_for_deconstructSigs.dat"
     cosmic_signatures:
       standard: "{output_dir}/cosmic_signatures/COSMIC_v3_SBS_GRCh38_tab_with_index.txt"

@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """
-Prepare External Mutational Catalog for SigFitTest Workflow
+Prepare a Real Mutational Catalog for SigFitTest Workflow
 
-Subsets/reformats a user-supplied mutation-channel catalog (no ground truth
-required) into the standard per-tool formats used by the workflow. Outputs are
-drop-in replacements for the files produced by MS_create_synthetic.py /
-prepare_real_samples.py, so all downstream tool rules work without modification.
-Evaluated via cross-tool agreement, like realsim, since there's no ground truth.
+Subsets/reformats a catalog of real samples (no ground truth) into the standard
+per-tool formats used by the workflow. Outputs are drop-in replacements for the
+files produced by MS_create_synthetic.py, so all downstream tool rules work
+without modification. Evaluated via cross-tool agreement, since there's no ground
+truth.
 
 Inputs
 ------
@@ -104,9 +104,8 @@ def load_catalog(input_catalog: str) -> pd.DataFrame:
 def select_tissue(catalog: pd.DataFrame, tissue_prefix: str) -> pd.DataFrame:
     """Subset to columns whose 'Tissue::SampleID' prefix matches tissue_prefix.
 
-    Same convention and logic as prepare_real_samples.py's select_cancer_type,
-    used when a catalog's columns follow that naming (auto-detected — see
-    get_external_cancer_types in workflow/rules/common.smk).
+    Used when a catalog's columns follow that naming (see get_real_cancer_types
+    in workflow/rules/common.smk).
     """
     prefix = f"{tissue_prefix}::"
     selected = [c for c in catalog.columns if c.startswith(prefix)]
@@ -158,7 +157,7 @@ def save_catalog_formats(
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Prepare an external mutational catalog for the SigFitTest workflow.",
+        description="Prepare a real mutational catalog for the SigFitTest workflow.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=__doc__,
     )
@@ -191,7 +190,7 @@ def main() -> None:
         "--tissue-prefix", default=None,
         help="If given, subset to columns named 'tissue_prefix::SampleID' (auto-detected "
              "per-tissue splitting for catalogs using that convention — see "
-             "get_external_cancer_types in workflow/rules/common.smk). Omit to use every "
+             "get_real_cancer_types in workflow/rules/common.smk). Omit to use every "
              "column in the catalog as one flat dataset.",
     )
     args = parser.parse_args()
@@ -251,7 +250,7 @@ def main() -> None:
     # Summary
     # ------------------------------------------------------------------
     print(
-        f"\nExternal catalog preparation complete: "
+        f"\nReal catalog preparation complete: "
         f"dataset={args.dataset_name}, "
         f"num_muts_label={args.num_muts_label}, "
         f"samples={catalog.shape[1]}, "

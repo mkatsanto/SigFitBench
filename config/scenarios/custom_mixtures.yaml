@@ -1,0 +1,60 @@
+# ============================================================================
+# Scenario: your own signature mixes
+# Instead of drawing mixes from tissue data, every row of a table you write
+# becomes one sample. Use it to test cases you care about, e.g. two similar
+# signatures together, or one signature at a very low share.
+# SBS90 is used in the table but hidden from the tools, so the sample
+# "with_unknown" also tests an unknown signature.
+#
+#   snakemake --profile profiles/local-conda --snakefile workflow/Snakefile \
+#     --configfile config/scenarios/custom_mixtures.yaml
+#
+# Guide: docs/guide.md#custom-mixtures
+# ============================================================================
+
+tools_to_run: ["MutationalPatterns", "deconstructSigs", "SPA", "MuSiCal"]
+
+data_types: ["custom"]
+relevance_modes: ["standard"]
+
+custom_datasets:
+  ExampleMix:                                         # name used in result folders
+    combinations_file: "config/scenarios/custom_mixtures.tsv"   # rows = samples, columns = signatures
+    out_of_reference_sigs: ["SBS90"]                           # in the table, hidden from the tools
+    # signature_file: "input/COSMIC_v3.4_SBS_GRCh38.txt"       # optional, defaults to cosmic_signatures.base_file
+
+num_muts: [1000, 10000]                  # every row gets this many mutations
+num_realizations: 5                      # 5 random draws of each row
+
+out_of_reference_sigs: []                # only used by "realsim"; custom tables set their own above
+out_of_reference_weights: []
+
+random_seed: 0
+
+output_dir: "results_custom_mixtures"
+log_dir: "logs_custom_mixtures"
+
+# ---------------------------------------------------------------------------
+# Shared settings (the same in every scenario)
+# ---------------------------------------------------------------------------
+
+input_dir: "input"
+signature_contributions_dir: "cosmic_tissue_data"
+cosmic_signatures:
+  base_file: "input/COSMIC_v3.3.1_SBS_GRCh38.txt"
+matrix_order: "input/mut_matrix_order_MutationalPatterns.dat"
+wgs_or_wes: "WGS"
+epsilon: 0.00000001
+
+relevant_signatures: null
+
+evaluation:
+  min_contribution: 10.0
+  run_bootstrap_quality: false
+  num_bootstrap: 1
+
+tool_overrides:
+  mutationalpatterns:
+    strict: true
+  sigminer:
+    method: "NNLS"

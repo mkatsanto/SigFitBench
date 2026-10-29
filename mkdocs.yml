@@ -1,0 +1,36 @@
+site_name: SigFitBench
+site_description: Compare mutational signature fitting tools on simulated and real data
+repo_url: https://github.com/mkatsanto/SigFitBench
+edit_uri: edit/main/docs/
+
+nav:
+  - Home: index.md
+  - Guide: guide.md
+  - Configuration: configuration.md
+  - Results and metrics: results.md
+
+theme:
+  name: material
+  features:
+    - content.code.copy
+    - navigation.sections
+    - toc.follow
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      toggle:
+        icon: material/weather-night
+        name: Dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      toggle:
+        icon: material/weather-sunny
+        name: Light mode
+
+markdown_extensions:
+  - admonition
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.highlight
+  - pymdownx.superfences

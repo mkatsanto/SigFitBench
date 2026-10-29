@@ -7,7 +7,7 @@ import os
 # ==============================================================================
 
 wildcard_constraints:
-    data_type=r"(synthetic|realsim|samples|external|custom)",
+    data_type=r"(realsim|real|samples|custom)",
     cancer_type=r"[A-Za-z0-9_-]+",
     num_muts=r"(\d+|none)",
     identifier=r"[A-Za-z0-9_-]+",
@@ -26,7 +26,7 @@ rule evaluate_tool_performance:
         tool_results=tool_result("{tool}"),
         true_weights=lambda wildcards: os.path.join(
             config['output_dir'], "generated_data", wildcards.data_type,
-            f"weights_{wildcards.cancer_type}-w_{'0' if wildcards.data_type == 'realsim' else wildcards.rep}-{wildcards.num_muts}.dat"
+            f"weights_{wildcards.cancer_type}-w_{wildcards.rep}-{wildcards.num_muts}.dat"
         ),
         reference_signatures=lambda wildcards: get_cosmic_signatures(
             wildcards.tool, wildcards.relevance, data_type=wildcards.data_type, dataset=wildcards.cancer_type
@@ -247,12 +247,12 @@ rule aggregate_bootstrap_quality:
 
 
 # ==============================================================================
-# CROSS-TOOL AGREEMENT (no-ground-truth data types: realsim, external)
+# CROSS-TOOL AGREEMENT (no-ground-truth data type: real)
 # ==============================================================================
 
 rule evaluate_tool_agreement:
     """Compare every selected tool's fit pairwise for one no-ground-truth cell
-    (realsim or external without ground_truth)."""
+    (real data)."""
     input:
         tool_results=lambda wildcards: expand(
             tool_result("{tool}"),
@@ -310,7 +310,7 @@ rule evaluate_tool_agreement:
 
 
 rule aggregate_tool_agreement:
-    """Combine per-cell agreement TSVs from realsim and external datasets into one table."""
+    """Combine per-cell agreement TSVs from all real datasets into one table."""
     input:
         agreement_files=get_agreement_files(),
         script=os.path.join(workflow.basedir, "..", "scripts", "aggregate_tool_agreement.py")
