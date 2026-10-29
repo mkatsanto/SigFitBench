@@ -2,8 +2,7 @@
 """
 Cross-tool agreement for one (data_type, cancer_type, relevance, num_muts) cell.
 
-Used where no ground truth exists (realsim, external without a ground_truth
-file): instead of comparing each tool's fit to a known answer, tools are
+Used where no ground truth exists (real data): instead of comparing each tool's fit to a known answer, tools are
 compared pairwise to each other, per sample, on their fitted signature-weight
 vectors (aligned on the union of signature names, missing filled with 0):
 

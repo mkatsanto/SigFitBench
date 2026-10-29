@@ -14,7 +14,8 @@ def _custom_weights_file(wildcards):
     return ds["combinations_file"]
 
 # Data generation rules
-rule ms_create_synthetic_catalog:
+rule create_realsim_catalog:
+    """Simulate samples for one tissue from signature activity in real tumours."""
     input:
         # Signature contributions file for specific cancer type
         signature_contributions_file=lambda wildcards: os.path.join(
@@ -23,10 +24,10 @@ rule ms_create_synthetic_catalog:
         ),
         script=os.path.join(workflow.basedir, "..", "scripts", "MS_create_synthetic.py")
     output:
-        weights=os.path.join(config["output_dir"], "generated_data", "synthetic", "weights_{cancer_type}-w_{rep}-{num_muts}.dat"),
+        weights=os.path.join(config["output_dir"], "generated_data", "realsim", "weights_{cancer_type}-w_{rep}-{num_muts}.dat"),
         # Dynamic outputs based on selected tools - at least one file must exist
         data_files=expand(
-            os.path.join(config["output_dir"], "generated_data", "synthetic", "counts_{{cancer_type}}-w_{{rep}}-{{num_muts}}_{format}.dat"),
+            os.path.join(config["output_dir"], "generated_data", "realsim", "counts_{{cancer_type}}-w_{{rep}}-{{num_muts}}_{format}.dat"),
             format=get_required_output_formats()
         )
     params:
@@ -44,8 +45,8 @@ rule ms_create_synthetic_catalog:
     resources:
         mem_mb=lambda wildcards, attempt: 2000 * attempt,
     log:
-        stderr=os.path.join(config["log_dir"], "ms_create_synthetic_catalog.{cancer_type}.{rep}.{num_muts}.stderr.log"),
-        stdout=os.path.join(config["log_dir"], "ms_create_synthetic_catalog.{cancer_type}.{rep}.{num_muts}.stdout.log")
+        stderr=os.path.join(config["log_dir"], "create_realsim_catalog.{cancer_type}.{rep}.{num_muts}.stderr.log"),
+        stdout=os.path.join(config["log_dir"], "create_realsim_catalog.{cancer_type}.{rep}.{num_muts}.stdout.log")
     shell:
         "(python '{input.script}'  \
         --num_samples {params.num_samples} \
@@ -63,68 +64,26 @@ rule ms_create_synthetic_catalog:
         --out_sigs {params.out_sigs}) > {log.stdout} 2> {log.stderr}"
 
 
-# Real samples: subset a real mutation catalog to one cancer type, no downsampling
-rule create_realsim_catalog:
-    """Select real samples for one cancer type from a PCAWG-style catalog, at their
-    native mutation counts (no downsampling, no simulation).
+rule prepare_real_catalog:
+    """Prepare one group of real samples for the fitting tools.
 
-    num_muts is fixed to the literal "none" for this data_type — real samples don't
-    share one target mutation count, so nothing here depends on it (see wildcard_constraints).
-    rep is always 0. There is no ground truth for real samples: SigID (whose auto-penalty
-    search logs a diagnostic against true weights) and evaluate_tool_performance require a
-    weights_*.dat file and so cannot be used with data_type="realsim".
+    Only a mutation-channel catalog is required (contexts × samples) — there is no
+    ground truth. The {cancer_type} wildcard is resolved back to its real_datasets
+    entry (and, if that catalog uses the "Tissue::SampleID" column convention, the
+    tissue to filter to) via resolve_real_dataset() — see get_real_cancer_types() in
+    common.smk. Catalogs without that convention are fit as one group named after the
+    dataset key. Samples keep their own mutation counts (no downsampling).
+    num_muts and rep are always "none"/0 in the output path: real samples have no
+    target mutation count or repeated draws, so both are fixed placeholders in the
+    shared output layout every tool rule uses (RUN_DIR in common.smk). Evaluated via
+    cross-tool agreement, since there's no ground truth to compare against.
     """
     input:
-        real_catalog=lambda wildcards: get_param("real_samples", "input_real_catalog"),
-        script=os.path.join(workflow.basedir, "..", "scripts", "prepare_real_samples.py")
+        catalog=lambda wildcards: config["real_datasets"][resolve_real_dataset(wildcards.cancer_type)[0]]["catalog"],
+        script=os.path.join(workflow.basedir, "..", "scripts", "prepare_real_catalog.py")
     output:
         data_files=expand(
-            os.path.join(config["output_dir"], "generated_data", "realsim",
-                         "counts_{{cancer_type}}-w_0-{{num_muts}}_{format}.dat"),
-            format=get_required_output_formats()
-        )
-    params:
-        output_formats=get_required_output_formats()
-    conda:
-        os.path.join(workflow.basedir, "envs", "python.yaml")
-    threads: 1
-    resources:
-        mem_mb=lambda wildcards, attempt: 2000 * attempt,
-    log:
-        stderr=os.path.join(config["log_dir"], "create_realsim_catalog.{cancer_type}.{num_muts}.stderr.log"),
-        stdout=os.path.join(config["log_dir"], "create_realsim_catalog.{cancer_type}.{num_muts}.stdout.log")
-    shell:
-        "(python '{input.script}' \
-        --input_catalog {input.real_catalog} \
-        --cancer_type {wildcards.cancer_type} \
-        --num_muts_label {wildcards.num_muts} \
-        --output_dir {config[output_dir]}/generated_data/realsim \
-        --output_formats {params.output_formats} \
-        ) > {log.stdout} 2> {log.stderr}"
-
-
-rule prepare_external_catalog:
-    """Prepare external mutational catalog for fitting tools.
-
-    Only a mutation-channel catalog is required (contexts × samples) — no ground
-    truth, just like realsim. external_datasets[{ds_name}]["catalog"] is the only
-    key needed. The {cancer_type} wildcard is resolved back to its source dataset
-    (and, if that catalog uses the "Tissue::SampleID" column convention, the tissue
-    to filter to) via resolve_external_dataset() — see get_external_cancer_types()
-    in common.smk for the auto-detection logic; catalogs without that convention are
-    fit as one flat dataset named after the dataset key, unchanged from before.
-    num_muts and rep are always "none"/0 in the output path (like realsim, external
-    has no per-sample target mutation count or independent realizations, so both are
-    fixed placeholders in the shared output layout every tool rule uses (RUN_DIR in
-    common.smk), not configurable fields). Evaluated via cross-tool agreement,
-    same as realsim, since there's no ground truth to compare against.
-    """
-    input:
-        catalog=lambda wildcards: config["external_datasets"][resolve_external_dataset(wildcards.cancer_type)[0]]["catalog"],
-        script=os.path.join(workflow.basedir, "..", "scripts", "fit_external_catalog.py")
-    output:
-        data_files=expand(
-            os.path.join(config["output_dir"], "generated_data", "external",
+            os.path.join(config["output_dir"], "generated_data", "real",
                          "counts_{{cancer_type}}-w_0-{{num_muts}}_{format}.dat"),
             format=get_required_output_formats()
         )
@@ -133,8 +92,8 @@ rule prepare_external_catalog:
         matrix_order=config["matrix_order"],
         num_muts_label=lambda wildcards: wildcards.num_muts,
         tissue_arg=lambda wildcards: (
-            f"--tissue-prefix '{resolve_external_dataset(wildcards.cancer_type)[1]}'"
-            if resolve_external_dataset(wildcards.cancer_type)[1] else ""
+            f"--tissue-prefix '{resolve_real_dataset(wildcards.cancer_type)[1]}'"
+            if resolve_real_dataset(wildcards.cancer_type)[1] else ""
         )
     conda:
         os.path.join(workflow.basedir, "envs", "python.yaml")
@@ -142,13 +101,13 @@ rule prepare_external_catalog:
     resources:
         mem_mb=lambda wildcards, attempt: 2000 * attempt,
     log:
-        stderr=os.path.join(config["log_dir"], "prepare_external_catalog.{cancer_type}.{num_muts}.stderr.log"),
-        stdout=os.path.join(config["log_dir"], "prepare_external_catalog.{cancer_type}.{num_muts}.stdout.log")
+        stderr=os.path.join(config["log_dir"], "prepare_real_catalog.{cancer_type}.{num_muts}.stderr.log"),
+        stdout=os.path.join(config["log_dir"], "prepare_real_catalog.{cancer_type}.{num_muts}.stdout.log")
     shell:
         "(python '{input.script}' \
         --input-catalog '{input.catalog}' \
         --dataset-name {wildcards.cancer_type} \
-        --output-dir {config[output_dir]}/generated_data/external \
+        --output-dir {config[output_dir]}/generated_data/real \
         --output-formats {params.output_formats} \
         --matrix-order {params.matrix_order} \
         --num-muts-label {params.num_muts_label} \

@@ -1,0 +1,101 @@
+# Checks that every scenario config still works with the workflow.
+# On each push and pull request: a dry run (-n) of every config/scenarios/*.yaml,
+# which builds the full job plan without running any tool.
+# On demand (Actions tab -> "Check scenarios" -> "Run workflow"): also runs the
+# quick test for real, building the tool environments.
+
+name: Check scenarios
+
+on:
+  # Automatic runs switched off for now; remove the "#" from the next three lines
+  # to check every push to main and every pull request again.
+  # push:
+  #   branches: [main]
+  # pull_request:
+  workflow_dispatch:
+    inputs:
+      run_quick_test:
+        description: "Also run the quick test scenario (about 1 hour)"
+        type: boolean
+        default: false
+
+jobs:
+  dry-run:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash -el {0}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: mamba-org/setup-micromamba@v2
+        with:
+          environment-name: sigfitbench
+          create-args: >-
+            python=3.11
+            snakemake>=8.20,<9
+            pandas
+          condarc: |
+            channels:
+              - conda-forge
+              - bioconda
+
+      - name: Dry run of every scenario
+        run: |
+          status=0
+          for config in config/scenarios/*.yaml; do
+            # real_pcawg.yaml needs the PCAWG catalog, which is not in the repository
+            if [[ "$config" == *real_pcawg.yaml ]] && \
+               [[ ! -f real_mutational_catalogs/real_samples_WGS_PCAWG-146_input_profiles.dat ]]; then
+              echo "::notice::Skipped $config (PCAWG catalog not in the repository)"
+              continue
+            fi
+            echo "::group::$config"
+            if snakemake --snakefile workflow/Snakefile --configfile "$config" -n --quiet rules; then
+              echo "::endgroup::"
+            else
+              echo "::endgroup::"
+              echo "::error file=$config::Dry run failed"
+              status=1
+            fi
+          done
+          # No "exit" here: in this login shell it runs ~/.bash_logout, which fails
+          # on GitHub's runners and turns a pass into exit code 1
+          [ "$status" -eq 0 ]
+
+  quick-test:
+    if: github.event_name == 'workflow_dispatch' && inputs.run_quick_test
+    needs: dry-run
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    defaults:
+      run:
+        shell: bash -el {0}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: mamba-org/setup-micromamba@v2
+        with:
+          environment-file: install/environment.yml
+
+      - name: Run the quick test
+        run: |
+          snakemake --snakefile workflow/Snakefile \
+            --configfile config/scenarios/quick_test.yaml \
+            --use-conda --cores 4
+
+      - name: Fail if a tool failed
+        run: |
+          if grep -rl "^# TOOL FAILED" results_quick_test --include="*_contribution.dat"; then
+            echo "::error::A tool failed; see the logs artifact"
+            exit 1
+          fi
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: quick-test-results
+          path: |
+            results_quick_test/*.html
+            results_quick_test/*.tsv
+            logs_quick_test/

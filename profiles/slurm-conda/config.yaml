@@ -21,11 +21,9 @@ default-resources:
   runtime: 60
 
 set-resources:
-  ms_create_synthetic_catalog:
-    runtime: 15
   create_realsim_catalog:
-    runtime: 30
-  prepare_external_catalog:
+    runtime: 15
+  prepare_real_catalog:
     runtime: 30
   create_custom_catalog:
     runtime: 30

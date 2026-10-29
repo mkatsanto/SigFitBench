@@ -7,7 +7,7 @@ import os
 # ==============================================================================
 
 wildcard_constraints:
-    data_type=r"(synthetic|realsim|samples|external|custom)",
+    data_type=r"(realsim|real|samples|custom)",
     cancer_type=r"[A-Za-z0-9_-]+",
     identifier=r"[A-Za-z0-9_-]+",
     num_muts=r"(\d+|none)",
@@ -425,13 +425,13 @@ rule sigid:
         matrix_order=config["matrix_order"],
         # true_weights is optional for sigid itself (used only to log a diagnostic TAE,
         # never influences the fit — see SigID/sigid/cli.py's --true-weights help text);
-        # no weights_*.dat is ever produced for realsim/external (no ground truth), so
+        # no weights_*.dat is ever produced for real (no ground truth), so
         # this resolves to no input at all for those, rather than a missing-file error.
         true_weights=lambda wildcards: (
             os.path.join(
                 config['output_dir'], "generated_data", wildcards.data_type,
-                f"weights_{wildcards.cancer_type}-w_{'0' if wildcards.data_type == 'realsim' else wildcards.rep}-{wildcards.num_muts}.dat"
-            ) if wildcards.data_type not in ("realsim", "external") else []
+                f"weights_{wildcards.cancer_type}-w_{wildcards.rep}-{wildcards.num_muts}.dat"
+            ) if wildcards.data_type != "real" else []
         ),
     output:
         result=tool_result("SigID", input_format="csv_no_index")

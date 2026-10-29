@@ -1,0 +1,58 @@
+# ============================================================================
+# Scenario: your own mutation catalog
+# Fits real samples you provide. There is no known answer, so the tools are
+# compared with each other: where they agree, and where they disagree.
+# The example catalog has 8 simulated samples; replace it with yours.
+#
+#   snakemake --profile profiles/local-conda --snakefile workflow/Snakefile \
+#     --configfile config/scenarios/own_catalog.yaml
+#
+# Guide: docs/guide.md#own-catalog
+# ============================================================================
+
+tools_to_run: ["MutationalPatterns", "deconstructSigs", "SPA", "MuSiCal", "sigminer"]
+
+data_types: ["real"]
+relevance_modes: ["standard"]
+
+real_datasets:
+  Example:
+    # 96 mutation types (rows) x samples (columns), tab- or comma-separated.
+    # Columns named "Tissue::Sample" are grouped per tissue; other names are
+    # fitted together as one group called "Example".
+    catalog: "input/examples/example_catalog.tsv"
+
+num_muts: []                             # not used: the catalog sets the counts
+num_realizations: 1
+out_of_reference_sigs: []
+out_of_reference_weights: []
+
+random_seed: 0
+
+output_dir: "results_own_catalog"
+log_dir: "logs_own_catalog"
+
+# ---------------------------------------------------------------------------
+# Shared settings (the same in every scenario)
+# ---------------------------------------------------------------------------
+
+input_dir: "input"
+signature_contributions_dir: "cosmic_tissue_data"
+cosmic_signatures:
+  base_file: "input/COSMIC_v3.3.1_SBS_GRCh38.txt"   # use the genome build of your data
+matrix_order: "input/mut_matrix_order_MutationalPatterns.dat"
+wgs_or_wes: "WGS"
+epsilon: 0.00000001
+
+relevant_signatures: null
+
+evaluation:
+  min_contribution: 10.0
+  run_bootstrap_quality: false
+  num_bootstrap: 1
+
+tool_overrides:
+  mutationalpatterns:
+    strict: true
+  sigminer:
+    method: "NNLS"

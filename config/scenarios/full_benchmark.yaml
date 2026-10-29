@@ -1,0 +1,77 @@
+# ============================================================================
+# Scenario: full benchmark
+# Every available tool, twelve tissues, a wide range of mutation counts and
+# one unknown signature per sample. Lists every tool setting you can change.
+# Too large for a laptop: run it on a cluster.
+#
+#   snakemake --profile profiles/slurm-generic --snakefile workflow/Snakefile \
+#     --configfile config/scenarios/full_benchmark.yaml
+#
+# Guide: docs/guide.md#full-benchmark
+# ============================================================================
+
+tools_to_run: ["MutationalPatterns", "deconstructSigs", "SPA", "SPA_low", "MuSiCal",
+               "signature_tools", "sigminer", "sigfit", "mmsig", "siglasso",
+               "sigspack", "yapsa", "mSigAct", "StarSignDNA"]
+
+data_types: ["realsim"]
+relevance_modes: ["standard"]
+
+cancer_types: ["Breast", "CNS-GBM", "ColoRect-AdenoCA", "Eso-AdenoCA", "Head-SCC", "Liver-HCC",
+               "Lung-AdenoCA", "Lymph-BNHL", "Ovary-AdenoCA", "Panc-AdenoCA", "Skin-Melanoma",
+               "Stomach-AdenoCA"]
+num_muts: [100, 500, 2000, 10000, 50000, 200000]
+num_samples: 100
+num_realizations: 1
+
+out_of_reference_sigs: ["SBS10c", "SBS10d", "SBS86", "SBS87", "SBS88", "SBS89",
+                        "SBS90", "SBS91", "SBS92", "SBS93", "SBS94", "SBS95"]
+out_of_reference_weights: [0.1]           # one unknown signature per sample, 10% of its mutations
+
+random_seed: 0
+
+output_dir: "results_full_benchmark"
+log_dir: "logs_full_benchmark"
+
+# ---------------------------------------------------------------------------
+# Shared settings (the same in every scenario)
+# ---------------------------------------------------------------------------
+
+input_dir: "input"
+signature_contributions_dir: "cosmic_tissue_data"
+cosmic_signatures:
+  base_file: "input/COSMIC_v3.3.1_SBS_GRCh38.txt"
+matrix_order: "input/mut_matrix_order_MutationalPatterns.dat"
+wgs_or_wes: "WGS"
+epsilon: 0.00000001
+
+relevant_signatures: null
+
+evaluation:
+  min_contribution: 10.0
+  run_bootstrap_quality: false
+  num_bootstrap: 1
+
+# ---------------------------------------------------------------------------
+# Tool settings (the values shown are the defaults used by this workflow)
+# ---------------------------------------------------------------------------
+
+tool_overrides:
+  mutationalpatterns:
+    strict: true                         # true = drop signatures that barely improve the fit
+  sigminer:
+    method: "NNLS"                       # "NNLS", "QP" or "SA"
+  signature_tools:
+    method: "KLD"                        # "KLD" or "NNLS"
+    exposureFilterType: "giniScaledThreshold"   # or "fixedThreshold"
+    nboot: 100                           # bootstrap repeats used to drop uncertain signatures
+    nparallel: 4                         # cores per job
+  msigact:
+    max_level: 2                         # remove up to this many signatures at once when testing
+    p_thresh: 0.05                       # remove a signature only if the test p-value is at least this
+    likelihood: "neg.binom"              # "neg.binom" or "multinom"
+    threads: 2                           # cores per job
+    extra:                               # any other mSigAct SparseAssignActivity argument
+      max.subsets: 2500
+  starsigndna:
+    n_iterations: 1000                   # optimisation steps

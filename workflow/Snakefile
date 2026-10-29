@@ -113,27 +113,18 @@ rule all:
             rep=range(config.get("num_realizations", 1)),
             tool=get_selected_tools(),
         ) if "custom" in config.get("data_types", []) else [],
-        external_tool_results = expand(
+        # Real-sample tool results (data_type == "real", rep always 0, no ground truth)
+        real_tool_results = expand(
             tool_result("{tool}"),
-            data_type="external",
+            data_type="real",
             num_muts="none",
             rep=0,
-            cancer_type=get_all_external_cancer_types(),
+            cancer_type=get_all_real_cancer_types(),
             relevance=config.get("relevance_modes", ["standard"]),
             tool=get_selected_tools(),
-        ) if "external" in config.get("data_types", []) else [],
-        # Real-sample tool results (data_type == "realsim", rep always 0, no ground truth)
-        realsim_tool_results = expand(
-            tool_result("{tool}"),
-            data_type="realsim",
-            num_muts="none",
-            rep=0,
-            cancer_type=get_realsim_cancer_types(),
-            relevance=config.get("relevance_modes", ["standard"]),
-            tool=get_selected_tools(),
-        ) if "realsim" in config.get("data_types", []) else [],
-        # Ground-truth-based summary + report (synthetic/custom only — realsim/external
-        # have no ground truth, so compute_summary_metrics would have nothing to
+        ) if "real" in config.get("data_types", []) else [],
+        # Ground-truth-based summary + report (realsim/custom only — real has no
+        # ground truth, so compute_summary_metrics would have nothing to
         # aggregate and get_eval_files() returns []; only request these when there's
         # actually ground-truth data to summarize).
         all_metrics = (
@@ -156,8 +147,8 @@ rule all:
             os.path.join(config['output_dir'], f"sigfitbench_report_{name}.html")
             for name in report_names
         ],
-        # Cross-tool agreement summary + report (realsim/external only — no ground
-        # truth, so tools are compared to each other instead of to a known answer).
+        # Cross-tool agreement summary + report (real only — no ground truth, so tools
+        # are compared to each other instead of to a known answer).
         tool_agreement = (
             os.path.join(config['output_dir'], "all_tool_agreement.tsv")
             if _has_no_ground_truth_data else []

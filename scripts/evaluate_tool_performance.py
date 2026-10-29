@@ -519,7 +519,7 @@ def create_comparison_plots(all_metrics, plots_dir, data_type, num_muts, relevan
     Args:
         all_metrics: List of dicts, one per tool with metrics
         plots_dir: Directory to save plots
-        data_type: Type of data (synthetic, realsim)
+        data_type: Type of data (realsim, custom)
         num_muts: Number of mutations
         relevance: Signature set relevance (standard, relevant)
     """
@@ -756,7 +756,7 @@ def main():
     parser.add_argument('--cancer-type', type=str, default=None,
                         help='Cancer type for this evaluation (e.g., Breast, Lung)')
     parser.add_argument('--data-type', type=str, default=None,
-                        help='Data type: synthetic or realsim (used in output and plot titles)')
+                        help='Data type: realsim or custom (used in output and plot titles)')
     parser.add_argument('--plots-dir',
                         help='Directory to save comparison plots (multi-tool mode)')
     parser.add_argument('--relevance', default='standard',
