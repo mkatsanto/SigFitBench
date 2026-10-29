@@ -44,6 +44,7 @@ for s in counts.columns:
         make_plots=False,
         sample_reconstruction_plots=False,
         initial_remove_penalty=snakemake.params.initial_remove_penalty,
+        cpu=snakemake.threads,
     )
     fits.append(pd.read_csv(
         os.path.join(s, "Assignment_Solution/Activities/Assignment_Solution_Activities.txt"),
