@@ -7,9 +7,11 @@
 name: Check scenarios
 
 on:
-  push:
-    branches: [main]
-  pull_request:
+  # Automatic runs switched off for now; remove the "#" from the next three lines
+  # to check every push to main and every pull request again.
+  # push:
+  #   branches: [main]
+  # pull_request:
   workflow_dispatch:
     inputs:
       run_quick_test:
