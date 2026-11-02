@@ -1860,7 +1860,8 @@ def create_per_sample_violin_plots(df_samples, cancer_type, tools, colors):
         
         # Add theoretical threshold lines for this burden (if available)
         if 'theoretical_min_TAE' in burden_data.columns:
-            theoretical_tae = burden_data['theoretical_min_TAE'].iloc[0]
+            # Average over samples: the limit differs between samples with and without unknowns
+            theoretical_tae = burden_data['theoretical_min_TAE'].mean()
             if not np.isnan(theoretical_tae) and theoretical_tae > 0:
                 # Add theoretical limits for relevant metrics
                 for metric, row, col, ylabel in metrics:
@@ -2102,21 +2103,29 @@ def create_per_method_sample_plots(df_samples, cancer_type, tools, colors):
                 row=row, col=col
             )
         
-        # Add theoretical threshold lines for this burden (if available)
+        # Add theoretical threshold lines for this burden (if available).
+        # Each sample has its own limit (only samples with unknown signatures have one),
+        # so draw a short dash over each sample instead of one line for all.
         if 'theoretical_min_TAE' in burden_data.columns:
-            theoretical_tae = burden_data['theoretical_min_TAE'].iloc[0]
-            if not np.isnan(theoretical_tae) and theoretical_tae > 0:
+            sample_min_tae = burden_data.groupby('sample')['theoretical_min_TAE'].mean()
+            line_x, line_y = [], []
+            for sample_idx, sample in enumerate(samples):
+                value = sample_min_tae.get(sample, np.nan)
+                if not np.isnan(value) and value > 0:
+                    line_x += [sample_idx - 0.4, sample_idx + 0.4, None]
+                    line_y += [value, value, None]
+            if line_x:
                 for metric, row, col, ylabel in metrics:
                     if metric == 'TAE':
                         trace = go.Scatter(
-                            x=list(range(len(sample_labels))),
-                            y=[theoretical_tae] * len(sample_labels),
+                            x=line_x,
+                            y=line_y,
                             name='Theoretical Best',
                             mode='lines',
                             line=dict(color='#ef4444', width=2, dash='dash'),
                             showlegend=bool(burden == mut_burdens[0]),
                             legendgroup='threshold',
-                            hovertemplate=f'Theoretical Min TAE: {theoretical_tae:.4f}<br>(Due to unknown signatures)<extra></extra>',
+                            hovertemplate='Theoretical Min TAE: %{y:.4f}<br>(Due to unknown signatures)<extra></extra>',
                             visible=bool(burden == mut_burdens[0])
                         )
                         fig.add_trace(trace, row=row, col=col)
@@ -3076,7 +3085,8 @@ def create_metrics_grid(df, cancer_type, tools, colors, df_per_sample=None, pool
         
         # TAE threshold
         if 'theoretical_min_TAE' in cancer_threshold.columns:
-            theoretical_tae = cancer_threshold['theoretical_min_TAE'].iloc[0]
+            # Average over samples: the limit differs between samples with and without unknowns
+            theoretical_tae = cancer_threshold['theoretical_min_TAE'].mean()
             if not np.isnan(theoretical_tae) and theoretical_tae > 0:
                 fig.add_trace(
                     go.Scatter(

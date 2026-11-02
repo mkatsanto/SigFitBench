@@ -374,7 +374,17 @@ def evaluate_performance(
         # nRMSE = sqrt(mean((w_fitted - w_true)^2))
         sig_errors = (df_fitted[sample] - df_true[sample]) / muts[sample]
         sample_nRMSE = np.sqrt(np.mean(sig_errors ** 2))
-        
+
+        # Share of this sample's mutations the tool assigned (1 = all, above 1 = more than exist)
+        sample_assigned = df_fitted[sample].sum()
+        sample_weight_tot = sample_assigned / muts[sample]
+
+        # Effective number of signatures in this sample's fit (nan if nothing was assigned)
+        if sample_assigned > 0:
+            sample_n_eff = 1 / np.power(df_fitted[sample] / sample_assigned, 2).sum()
+        else:
+            sample_n_eff = np.nan
+
         # Calculate classification metrics for this sample
         if num_TP + num_FP > 0:
             Psample = num_TP / (num_TP + num_FP)  # Precision
@@ -438,6 +448,8 @@ def evaluate_performance(
             'num_muts': muts[sample],
             'TAE': sample_TAE,
             'nRMSE': sample_nRMSE,
+            'weight_tot': sample_weight_tot,
+            'n_eff': sample_n_eff,
             'P': Psample,
             'R': Rsample,
             'S': Ssample,
@@ -824,11 +836,8 @@ def main():
         metrics['tool'] = tool_name
         all_metrics.append(metrics)
         
-        # Attach tool name and per-run constants to each per-sample row
         for sample_metric in per_sample:
             sample_metric['tool'] = tool_name
-            sample_metric['weight_tot'] = metrics['weight_tot']
-            sample_metric['n_eff'] = metrics['n_eff']
         all_per_sample_metrics.extend(per_sample)
         
         # Print summary
@@ -858,7 +867,7 @@ def main():
 
         for sm in all_per_sample_metrics:
             f.write(f"{cancer_type_str}\t{data_type_str}\t{sm['tool']}\t{args.realization}\t{sm['sample']}\t{sm['num_muts']}\t")
-            f.write(f"{sm['TAE']:.4f}\t{sm['nRMSE']:.4f}\t{sm['weight_tot']:.4f}\t{sm['n_eff']:.4f}\t")
+            f.write(f"{sm['TAE']:.4f}\t{sm['nRMSE']:.4f}\t{sm['weight_tot']:.4f}\t{_fmt(sm['n_eff'])}\t")
             f.write(f"{sm['P']:.4f}\t{sm['R']:.4f}\t{sm['S']:.4f}\t{sm['F1']:.4f}\t{sm['MCC']:.4f}\t")
             f.write(f"{sm['MAE_active']:.4f}\t{sm['wtot_FP']:.4f}\t{sm['num_FP']}\t{sm['wtot_FN']:.4f}\t{sm['num_FN']}\t")
             f.write(f"{sm['num_TP']}\t{sm['num_TN']}\t")

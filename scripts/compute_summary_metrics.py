@@ -49,7 +49,7 @@ def compute_summary(input_files: list, per_sample_output: str, output_file: str)
         TAE=('TAE', 'mean'),
         TAE_std=('TAE', 'std'),
         nRMSE=('nRMSE', lambda x: float(np.sqrt(np.mean(np.array(x) ** 2)))),
-        weight_tot=('weight_tot', 'first'),
+        weight_tot=('weight_tot', 'mean'),
         n_eff=('n_eff', 'mean'),
         MAE_active=('MAE_active', 'mean'),
         wtot_FP=('wtot_FP', 'mean'),
