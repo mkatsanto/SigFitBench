@@ -50,12 +50,12 @@ rule evaluate_tool_performance:
     resources:
         mem_mb=lambda wildcards, attempt: 2000 * attempt,
     shell:
-        "(python '{input.script}' \
-        --tool-results {input.tool_results} \
-        --true-weights {input.true_weights} \
-        --reference-signatures {input.reference_signatures} \
-        --cosmic-file {input.cosmic_file} \
-        --output {output.per_sample_metrics} \
+        "(python {input.script:q} \
+        --tool-results {input.tool_results:q} \
+        --true-weights {input.true_weights:q} \
+        --reference-signatures {input.reference_signatures:q} \
+        --cosmic-file {input.cosmic_file:q} \
+        --output {output.per_sample_metrics:q} \
         --tool {wildcards.tool} \
         --num-muts {wildcards.num_muts} \
         --min-contribution {params.min_contribution} \
@@ -63,7 +63,7 @@ rule evaluate_tool_performance:
         --cancer-type {wildcards.cancer_type} \
         --data-type {wildcards.data_type} \
         --out-of-reference-sigs {params.out_of_reference_sigs}) \
-        > {log.stdout} 2> {log.stderr}"
+        > {log.stdout:q} 2> {log.stderr:q}"
 
 
 rule assess_fit_quality_bootstrap:
@@ -92,15 +92,15 @@ rule assess_fit_quality_bootstrap:
     resources:
         mem_mb=lambda wildcards, attempt: 4000 * attempt,
     shell:
-        "(python '{input.script}' \
-        --tool-results {input.tool_results} \
-        --input-catalog {input.input_catalog} \
-        --reference-signatures {input.reference_signatures} \
-        --output {output.assessment} \
+        "(python {input.script:q} \
+        --tool-results {input.tool_results:q} \
+        --input-catalog {input.input_catalog:q} \
+        --reference-signatures {input.reference_signatures:q} \
+        --output {output.assessment:q} \
         --tool {wildcards.tool} \
         --num-bootstrap {params.num_bootstrap} \
         --random-seed {params.random_seed}) \
-        > {log.stdout} 2> {log.stderr}"
+        > {log.stdout:q} 2> {log.stderr:q}"
 
 
 rule evaluate_real_samples:
@@ -126,12 +126,12 @@ rule evaluate_real_samples:
     resources:
         mem_mb=lambda wildcards, attempt: 2000 * attempt,
     shell:
-        "(python '{input.script}' \
-        --tool-results {input.tool_results} \
-        --output {output.metrics} \
+        "(python {input.script:q} \
+        --tool-results {input.tool_results:q} \
+        --output {output.metrics:q} \
         --tool {wildcards.tool} \
         --sample-id {wildcards.identifier}) \
-        > {log.stdout} 2> {log.stderr}"
+        > {log.stdout:q} 2> {log.stderr:q}"
 
 
 # ==============================================================================
@@ -155,11 +155,11 @@ rule compute_summary_metrics:
     resources:
         mem_mb=lambda wildcards, attempt: 4000 * attempt,
     shell:
-        "(python '{input.script}' \
-        --input-files {input.eval_files} \
-        --output-per-sample {output.per_sample_metrics} \
-        --output {output.summary}) \
-        > {log.stdout} 2> {log.stderr}"
+        "(python {input.script:q} \
+        --input-files {input.eval_files:q} \
+        --output-per-sample {output.per_sample_metrics:q} \
+        --output {output.summary:q}) \
+        > {log.stdout:q} 2> {log.stderr:q}"
 
 
 # Benchmark TSVs for the uniform (non-custom) data types, built the same way get_eval_files()
@@ -207,10 +207,10 @@ rule aggregate_tool_benchmarks:
     resources:
         mem_mb=lambda wildcards, attempt: 2000 * attempt,
     shell:
-        "(python '{input.script}' \
-        --input-files {input.benchmark_files} \
-        --output {output}) \
-        > {log.stdout} 2> {log.stderr}"
+        "(python {input.script:q} \
+        --input-files {input.benchmark_files:q} \
+        --output {output:q}) \
+        > {log.stdout:q} 2> {log.stderr:q}"
 
 
 rule aggregate_bootstrap_quality:
@@ -240,10 +240,10 @@ rule aggregate_bootstrap_quality:
     resources:
         mem_mb=lambda wildcards, attempt: 2000 * attempt,
     shell:
-        "(python '{input.script}' \
-        --input-files {input.assessments} \
-        --output {output.all_bootstrap}) \
-        > {log.stdout} 2> {log.stderr}"
+        "(python {input.script:q} \
+        --input-files {input.assessments:q} \
+        --output {output.all_bootstrap:q}) \
+        > {log.stdout:q} 2> {log.stderr:q}"
 
 
 # ==============================================================================
@@ -294,19 +294,19 @@ rule evaluate_tool_agreement:
     resources:
         mem_mb=lambda wildcards, attempt: 2000 * attempt,
     shell:
-        "(python '{input.script}' \
-        --tool-results {input.tool_results} \
+        "(python {input.script:q} \
+        --tool-results {input.tool_results:q} \
         --tools {params.tools} \
         --min-contribution {params.min_contribution} \
         --data-type {wildcards.data_type} \
         --cancer-type {wildcards.cancer_type} \
         --relevance {wildcards.relevance} \
         --num-muts {wildcards.num_muts} \
-        --output {output.pairwise} \
-        --output-signature-calls {output.signature_calls} \
-        --output-sample-activity {output.sample_activity} \
-        --output-signature-weights {output.signature_weights} \
-        --original-catalog {input.original_catalog}) > {log.stdout} 2> {log.stderr}"
+        --output {output.pairwise:q} \
+        --output-signature-calls {output.signature_calls:q} \
+        --output-sample-activity {output.sample_activity:q} \
+        --output-signature-weights {output.signature_weights:q} \
+        --original-catalog {input.original_catalog:q}) > {log.stdout:q} 2> {log.stderr:q}"
 
 
 rule aggregate_tool_agreement:
@@ -325,9 +325,9 @@ rule aggregate_tool_agreement:
     resources:
         mem_mb=lambda wildcards, attempt: 2000 * attempt,
     shell:
-        "(python '{input.script}' \
-        --input-files {input.agreement_files} \
-        --output {output}) > {log.stdout} 2> {log.stderr}"
+        "(python {input.script:q} \
+        --input-files {input.agreement_files:q} \
+        --output {output:q}) > {log.stdout:q} 2> {log.stderr:q}"
 
 
 rule aggregate_signature_calls:
@@ -348,9 +348,9 @@ rule aggregate_signature_calls:
     resources:
         mem_mb=lambda wildcards, attempt: 2000 * attempt,
     shell:
-        "(python '{input.script}' \
-        --input-files {input.agreement_files} \
-        --output {output}) > {log.stdout} 2> {log.stderr}"
+        "(python {input.script:q} \
+        --input-files {input.agreement_files:q} \
+        --output {output:q}) > {log.stdout:q} 2> {log.stderr:q}"
 
 
 rule aggregate_sample_activity:
@@ -370,9 +370,9 @@ rule aggregate_sample_activity:
     resources:
         mem_mb=lambda wildcards, attempt: 2000 * attempt,
     shell:
-        "(python '{input.script}' \
-        --input-files {input.agreement_files} \
-        --output {output}) > {log.stdout} 2> {log.stderr}"
+        "(python {input.script:q} \
+        --input-files {input.agreement_files:q} \
+        --output {output:q}) > {log.stdout:q} 2> {log.stderr:q}"
 
 
 rule aggregate_signature_weights:
@@ -394,9 +394,9 @@ rule aggregate_signature_weights:
     resources:
         mem_mb=lambda wildcards, attempt: 2000 * attempt,
     shell:
-        "(python '{input.script}' \
-        --input-files {input.agreement_files} \
-        --output {output}) > {log.stdout} 2> {log.stderr}"
+        "(python {input.script:q} \
+        --input-files {input.agreement_files:q} \
+        --output {output:q}) > {log.stdout:q} 2> {log.stderr:q}"
 
 
 rule create_agreement_report:
@@ -421,14 +421,14 @@ rule create_agreement_report:
     resources:
         mem_mb=lambda wildcards, attempt: 2000 * attempt,
     shell:
-        "(python '{input.script}' \
-        --tool-agreement {input.tool_agreement} \
-        --signature-calls {input.signature_calls} \
-        --sample-activity {input.sample_activity} \
-        --signature-weights {input.signature_weights} \
-        --output {output} \
-        --title '{params.title}' \
-        --subtitle '{params.subtitle}') > {log.stdout} 2> {log.stderr}"
+        "(python {input.script:q} \
+        --tool-agreement {input.tool_agreement:q} \
+        --signature-calls {input.signature_calls:q} \
+        --sample-activity {input.sample_activity:q} \
+        --signature-weights {input.signature_weights:q} \
+        --output {output:q} \
+        --title {params.title:q} \
+        --subtitle {params.subtitle:q}) > {log.stdout:q} 2> {log.stderr:q}"
 
 
 # ==============================================================================

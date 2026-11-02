@@ -42,13 +42,13 @@ rule generate_matrix_from_vcf:
         stdout=os.path.join(config["log_dir"], "generate_matrix_from_vcf.{identifier}.stdout.log")
     shell:
         "(sigvcf "
-        "--vcf {input.vcf} --sample-names {wildcards.identifier} "
-        "--fasta {input.fasta} "
-        "--output-dir {params.output_dir} "
+        "--vcf {input.vcf:q} --sample-names {wildcards.identifier} "
+        "--fasta {input.fasta:q} "
+        "--output-dir {params.output_dir:q} "
         "--output-prefix {wildcards.identifier} "
         "--output-formats mutations "
         "{params.matrix_order_arg}) "
-        "> {log.stdout} 2> {log.stderr}"
+        "> {log.stdout:q} 2> {log.stderr:q}"
 
 
 def _resolve_sample_vcf(identifier):
