@@ -52,14 +52,14 @@ rule identify_active_signatures:
             "identify_active_signatures.{data_type}.{num_muts}.stdout.log")
     shell:
         """
-        (python '{input.script}'  \
-            --tool-results {input.tool_results} \
-            --output {output.active_list} \
+        (python {input.script:q}  \
+            --tool-results {input.tool_results:q} \
+            --output {output.active_list:q} \
             --min-contribution {params.min_contribution} \
             --min-sample-fraction {params.min_sample_fraction} \
             --min-avg-contribution {params.min_avg_contribution} \
             --consensus-tools {params.consensus_tools} \
-            --verbose) > {log.stdout} 2> {log.stderr}
+            --verbose) > {log.stdout:q} 2> {log.stderr:q}
         """
 
 

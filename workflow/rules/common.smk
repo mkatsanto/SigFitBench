@@ -277,8 +277,8 @@ def tool_result(tool, name="contribution", input_format=None):
 # "# TOOL FAILED: <last line of its error log>" to its result file and print it, instead of
 # stopping the workflow, so the HTML report is still built.
 ON_TOOL_FAILURE = (
-    ' || {{ reason=$(tail -n 1 {log.stderr} | tr -s "[:space:]" " "); '
-    'echo "# TOOL FAILED: ${{reason:-see log}}" > {output.result}; '
+    ' || {{ reason=$(tail -n 1 {log.stderr:q} | tr -s "[:space:]" " "); '
+    'echo "# TOOL FAILED: ${{reason:-see log}}" > {output.result:q}; '
     'echo "TOOL FAILED ({rule}): ${{reason:-see log}}" >&2; }}'
 )
 
