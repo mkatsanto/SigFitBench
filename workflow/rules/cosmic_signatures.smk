@@ -40,10 +40,10 @@ rule cosmic_signatures_by_format:
     conda:
         os.path.join(workflow.basedir, "envs", "python.yaml")
     shell:
-        "(python '{input.script}' \
-        -i {input.base_cosmic} \
-        -o {output} \
-        -f {wildcards.format}{params.exclude_sigs}) > {log.stdout} 2> {log.stderr}"
+        "(python {input.script:q} \
+        -i {input.base_cosmic:q} \
+        -o {output:q} \
+        -f {wildcards.format}{params.exclude_sigs}) > {log.stdout:q} 2> {log.stderr:q}"
 
 
 rule cosmic_signatures_by_format_custom:
@@ -67,10 +67,10 @@ rule cosmic_signatures_by_format_custom:
     conda:
         os.path.join(workflow.basedir, "envs", "python.yaml")
     shell:
-        "(python '{input.script}' \
-        -i {input.base_cosmic} \
-        -o {output} \
-        -f {wildcards.format}{params.exclude_sigs}) > {log.stdout} 2> {log.stderr}"
+        "(python {input.script:q} \
+        -i {input.base_cosmic:q} \
+        -o {output:q} \
+        -f {wildcards.format}{params.exclude_sigs}) > {log.stdout:q} 2> {log.stderr:q}"
 
 
 rule cosmic_signatures_by_format_relevant:
@@ -99,4 +99,4 @@ rule cosmic_signatures_by_format_relevant:
     conda:
         os.path.join(workflow.basedir, "envs", "python.yaml")
     shell:
-        "(python '{input.script}'  -i {input.base_cosmic} -o {output} -f {wildcards.format} -r '{params.relevant_sigs}') > {log.stdout} 2> {log.stderr}"
+        "(python {input.script:q}  -i {input.base_cosmic:q} -o {output:q} -f {wildcards.format} -r {params.relevant_sigs:q}) > {log.stdout:q} 2> {log.stderr:q}"

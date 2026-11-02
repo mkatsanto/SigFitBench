@@ -48,20 +48,20 @@ rule create_realsim_catalog:
         stderr=os.path.join(config["log_dir"], "create_realsim_catalog.{cancer_type}.{rep}.{num_muts}.stderr.log"),
         stdout=os.path.join(config["log_dir"], "create_realsim_catalog.{cancer_type}.{rep}.{num_muts}.stdout.log")
     shell:
-        "(python '{input.script}'  \
+        "(python {input.script:q}  \
         --num_samples {params.num_samples} \
         --num_muts {wildcards.num_muts} \
-        --signature_contributions_file {input.signature_contributions_file} \
-        --output_dir $(dirname {output.weights}) \
+        --signature_contributions_file {input.signature_contributions_file:q} \
+        --output_dir \"$(dirname {output.weights:q})\" \
         --cancer_type {wildcards.cancer_type} \
         --realization {wildcards.rep} \
-        --input_sigs {params.input_sigs} \
+        --input_sigs {params.input_sigs:q} \
         --epsilon {params.epsilon} \
         --random_seed {params.random_seed} \
         --wgs_or_wes {params.wgs_or_wes} \
         --output_formats {params.output_formats} \
         --out_of_reference_weights {params.out_of_reference_weights} \
-        --out_sigs {params.out_sigs}) > {log.stdout} 2> {log.stderr}"
+        --out_sigs {params.out_sigs}) > {log.stdout:q} 2> {log.stderr:q}"
 
 
 rule prepare_real_catalog:
@@ -104,14 +104,14 @@ rule prepare_real_catalog:
         stderr=os.path.join(config["log_dir"], "prepare_real_catalog.{cancer_type}.{num_muts}.stderr.log"),
         stdout=os.path.join(config["log_dir"], "prepare_real_catalog.{cancer_type}.{num_muts}.stdout.log")
     shell:
-        "(python '{input.script}' \
-        --input-catalog '{input.catalog}' \
+        "(python {input.script:q} \
+        --input-catalog {input.catalog:q} \
         --dataset-name {wildcards.cancer_type} \
-        --output-dir {config[output_dir]}/generated_data/real \
+        --output-dir {config[output_dir]:q}/generated_data/real \
         --output-formats {params.output_formats} \
-        --matrix-order {params.matrix_order} \
+        --matrix-order {params.matrix_order:q} \
         --num-muts-label {params.num_muts_label} \
-        {params.tissue_arg}) > {log.stdout} 2> {log.stderr}"
+        {params.tissue_arg}) > {log.stdout:q} 2> {log.stderr:q}"
 
 
 rule create_custom_catalog:
@@ -139,12 +139,12 @@ rule create_custom_catalog:
         stderr=os.path.join(config["log_dir"], "create_custom_catalog.{cancer_type}.{rep}.{num_muts}.stderr.log"),
         stdout=os.path.join(config["log_dir"], "create_custom_catalog.{cancer_type}.{rep}.{num_muts}.stdout.log")
     shell:
-        "(python '{input.script}' \
-        --weights_file {input.weights_file} \
+        "(python {input.script:q} \
+        --weights_file {input.weights_file:q} \
         --num_muts {wildcards.num_muts} \
-        --output_dir $(dirname {output.weights}) \
+        --output_dir \"$(dirname {output.weights:q})\" \
         --dataset {wildcards.cancer_type} \
         --realization {wildcards.rep} \
-        --input_sigs {input.input_sigs} \
+        --input_sigs {input.input_sigs:q} \
         --random_seed {params.random_seed} \
-        --output_formats {params.output_formats}) > {log.stdout} 2> {log.stderr}"
+        --output_formats {params.output_formats}) > {log.stdout:q} 2> {log.stderr:q}"

@@ -152,15 +152,15 @@ rule signature_tools:
         mem_mb=lambda wildcards, attempt: 4000 * attempt,
     shell:
         """
-        Rscript --vanilla "{input.script}" \
-            --data "{input.data}" \
-            --cosmic "{input.cosmic}" \
-            --output "{output.result}" \
-            --method "{params.method}" \
-            --filter-type "{params.exposureFilterType}" \
+        Rscript --vanilla {input.script:q} \
+            --data {input.data:q} \
+            --cosmic {input.cosmic:q} \
+            --output {output.result:q} \
+            --method {params.method:q} \
+            --filter-type {params.exposureFilterType:q} \
             --nboot {params.nboot} \
             --nparallel {threads} \
-            > {log.stdout} 2> {log.stderr}""" + ON_TOOL_FAILURE
+            > {log.stdout:q} 2> {log.stderr:q}""" + ON_TOOL_FAILURE
 
 rule sigspack:
     input:
@@ -400,15 +400,15 @@ rule sigtrim:
         mem_mb=lambda wildcards, attempt: 4000 * attempt,
     shell:
         "(sigtrim \
-        -i {input.data} \
-        -w {input.weights} \
-        -m {input.matrix_order} \
-        -o {output.result} \
+        -i {input.data:q} \
+        -w {input.weights:q} \
+        -m {input.matrix_order:q} \
+        -o {output.result:q} \
         --zscore-threshold {params.zscore_threshold} \
         --thresh-backward {params.thresh_backward} \
         --thresh-forward {params.thresh_forward} \
         --initial-remove-penalty {params.initial_remove_penalty} \
-        --max-iter {params.max_iter}) > {log.stdout} 2> {log.stderr}" + ON_TOOL_FAILURE
+        --max-iter {params.max_iter}) > {log.stdout:q} 2> {log.stderr:q}" + ON_TOOL_FAILURE
 
 
 rule sigid:
@@ -442,7 +442,7 @@ rule sigid:
         max_penalty=get_tool_config("sigid").get("max_penalty", 10000.0),
         initial_remove_penalty=get_tool_config("sigid").get("initial_remove_penalty", 0.05),
         true_weights_arg=lambda wildcards, input: (
-            f"--true-weights {input.true_weights}" if input.true_weights else ""
+            f"--true-weights '{input.true_weights}'" if input.true_weights else ""
         ),
     log:
         **tool_logs("SigID")
@@ -455,14 +455,14 @@ rule sigid:
         mem_mb=lambda wildcards, attempt: 4000 * attempt,
     shell:
         "(sigid \
-        -i {input.data} \
-        -w {input.weights} \
-        -m {input.matrix_order} \
-        -o {output.result} \
+        -i {input.data:q} \
+        -w {input.weights:q} \
+        -m {input.matrix_order:q} \
+        -o {output.result:q} \
         --thresh-backward {params.thresh_backward} \
         --max-iter {params.max_iter} \
         --min-penalty {params.min_penalty} \
         --max-penalty {params.max_penalty} \
         --initial-remove-penalty {params.initial_remove_penalty} \
         {params.true_weights_arg} \
-        --n-jobs {threads}) > {log.stdout} 2> {log.stderr}" + ON_TOOL_FAILURE
+        --n-jobs {threads}) > {log.stdout:q} 2> {log.stderr:q}" + ON_TOOL_FAILURE
