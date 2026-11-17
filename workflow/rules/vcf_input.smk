@@ -17,6 +17,14 @@
 #     vcf_dir: "input/vcf"                     # {identifier}.vcf(.gz) files live here
 #     reference_fasta: "input/ref/genome.fa"   # needs a matching genome.fa.fai
 
+# SigVCF is run locally from its source folder (no installation needed): config 'sigvcf_source' (relative to the folder
+# snakemake is started from), or by default the SigVCF folder next to SigFitBench
+SIGVCF_SOURCE = os.path.abspath(config.get("sigvcf_source") or os.path.join(workflow.basedir, "..", "..", "SigVCF"))
+if not os.path.exists(os.path.join(SIGVCF_SOURCE, "sigvcf", "cli.py")):
+    logger.warning(f"SigVCF not found in {SIGVCF_SOURCE}: set 'sigvcf_source' in the config to build catalogs from VCFs")
+SIGVCF = f"PYTHONPATH='{SIGVCF_SOURCE}' python -m sigvcf.cli"
+
+
 rule generate_matrix_from_vcf:
     """Build an SBS96 mutation-count matrix directly from a VCF via SigVCF.
 
@@ -41,7 +49,7 @@ rule generate_matrix_from_vcf:
         stderr=os.path.join(config["log_dir"], "generate_matrix_from_vcf.{identifier}.stderr.log"),
         stdout=os.path.join(config["log_dir"], "generate_matrix_from_vcf.{identifier}.stdout.log")
     shell:
-        "(sigvcf "
+        f"({SIGVCF} "
         "--vcf {input.vcf:q} --sample-names {wildcards.identifier} "
         "--fasta {input.fasta:q} "
         "--output-dir {params.output_dir:q} "
@@ -61,3 +69,65 @@ def _resolve_sample_vcf(identifier):
     # Let Snakemake raise its normal "missing input" error against the .vcf
     # path rather than failing early here with a less specific message.
     return os.path.join(vcf_dir, f"{identifier}.vcf")
+
+
+# ==============================================================================
+# CATALOG FROM A FOLDER OF VCFs (data_type == "real", real_datasets entry with vcf_dir)
+# ==============================================================================
+# Config:
+#   real_datasets:
+#     MyCohort:
+#       vcf_dir: "path/to/vcfs"                  # one {sample}.vcf(.gz) per sample
+#       reference_fasta: "input/ref/genome.fa"   # optional, default samples.reference_fasta; needs a .fai index
+
+import glob
+import re
+
+VCF_DATASETS = [name for name, ds in config.get("real_datasets", {}).items() if (ds or {}).get("vcf_dir") and not ds.get("catalog")]
+
+
+def _dataset_vcfs(dataset):
+    """Every .vcf / .vcf.gz in the dataset's vcf_dir, sorted (one sample each)."""
+    vcf_dir = config["real_datasets"][dataset]["vcf_dir"]
+    vcfs = sorted(glob.glob(os.path.join(vcf_dir, "*.vcf")) + glob.glob(os.path.join(vcf_dir, "*.vcf.gz")))
+    if not vcfs:
+        raise ValueError(f"no .vcf or .vcf.gz files in {vcf_dir} (real_datasets entry {dataset!r})")
+    return vcfs
+
+
+def _dataset_fasta(dataset):
+    return config["real_datasets"][dataset].get("reference_fasta") or config.get("samples", {}).get("reference_fasta")
+
+
+if VCF_DATASETS:
+    rule catalog_from_vcfs:
+        """One SBS96 catalog (mutation types x samples) from every VCF in a real_datasets entry's vcf_dir, via SigVCF.
+        Each VCF becomes one column, named after the file (without .vcf / .vcf.gz)."""
+        input:
+            vcfs=lambda wc: _dataset_vcfs(wc.dataset),
+            fasta=lambda wc: _dataset_fasta(wc.dataset),
+            fai=lambda wc: _dataset_fasta(wc.dataset) + ".fai",
+        output:
+            os.path.join(config["output_dir"], "internal", "catalogs_from_vcfs", "{dataset}_sbs96.dat")
+        wildcard_constraints:
+            dataset="|".join(re.escape(name) for name in VCF_DATASETS)
+        params:
+            output_dir=os.path.join(config["output_dir"], "internal", "catalogs_from_vcfs"),
+            matrix_order_arg=f"--matrix-order '{config['matrix_order']}'" if config.get("matrix_order") else "",
+        conda:
+            os.path.join(workflow.basedir, "envs", "sigvcf.yaml")
+        threads: 1
+        resources:
+            mem_mb=lambda wildcards, attempt: 2000 * attempt,   # streaming: flat, low memory
+        log:
+            stderr=os.path.join(config["log_dir"], "internal", "catalogs_from_vcfs", "{dataset}.stderr.log"),
+            stdout=os.path.join(config["log_dir"], "internal", "catalogs_from_vcfs", "{dataset}.stdout.log")
+        shell:
+            f"({SIGVCF} "
+            "--vcf {input.vcfs:q} "
+            "--fasta {input.fasta:q} "
+            "--output-dir {params.output_dir:q} "
+            "--output-prefix {wildcards.dataset} "
+            "--output-formats sbs96 "
+            "{params.matrix_order_arg}) "
+            "> {log.stdout:q} 2> {log.stderr:q}"

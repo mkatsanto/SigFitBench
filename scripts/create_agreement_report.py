@@ -5,7 +5,7 @@ agreement instead of TAE/Precision/Recall against a known answer.
 
 This is deliberately a separate report from create_html_report.py (the
 ground-truth/simulation report) — it reads a completely different input
-(all_tool_agreement.tsv, produced by evaluate_tool_agreement.py +
+(summary/tool_agreement.tsv, produced by evaluate_tool_agreement.py +
 aggregate_tool_agreement.py) and never touches the simulation subworkflow's
 data or code path. It only imports get_html_template()/get_tool_colors() from
 create_html_report.py for a visually consistent header/nav/tabs/table style.
@@ -25,7 +25,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
-from create_html_report import get_html_template, get_tool_colors
+from create_html_report import PLOT_CONFIG, get_html_template, get_tool_colors
 
 
 # ============================================================================
@@ -113,7 +113,7 @@ _SYMBOL_CYCLE = [
 ]
 
 
-def create_burden_vs_unknown_section(df_activity: pd.DataFrame, tools: list, include_plotly_cdn: bool) -> str:
+def create_burden_vs_unknown_section(df_activity: pd.DataFrame, tools: list, include_plotly: bool) -> str:
     """Aggregate scatter across every cancer type/dataset: one point per (sample,
     tool). X-axis is the sample's true mutation burden (from the input catalog,
     the same for every tool — not any tool's own assigned total). Y-axis is the
@@ -146,7 +146,7 @@ def create_burden_vs_unknown_section(df_activity: pd.DataFrame, tools: list, inc
     fig = go.Figure()
     if plot_df.empty:
         fig.update_layout(title="Mutation Burden vs. Percentage Unassigned — No Data", height=300)
-        return fig.to_html(include_plotlyjs=("cdn" if include_plotly_cdn else False), full_html=False, div_id=div_id)
+        return fig.to_html(include_plotlyjs=include_plotly, full_html=False, div_id=div_id, config=PLOT_CONFIG)
 
     for i, tool in enumerate(tool_names):
         tsub = plot_df[plot_df["tool"] == tool]
@@ -178,7 +178,7 @@ def create_burden_vs_unknown_section(df_activity: pd.DataFrame, tools: list, inc
         hovermode="closest",
     )
 
-    fig_html = fig.to_html(include_plotlyjs=("cdn" if include_plotly_cdn else False), full_html=False, div_id=div_id)
+    fig_html = fig.to_html(include_plotlyjs=include_plotly, full_html=False, div_id=div_id, config=PLOT_CONFIG)
 
     full_data = [
         {"tool": t, "cancer": c, "x": float(x), "y": float(y), "text": f"{s} — {t}, {c}", "color": cancer_colors[c]}
@@ -286,7 +286,7 @@ def create_signature_activity_boxplot(
     return fig
 
 
-def create_cell_section(df, df_sig, df_sw, cancer_type, relevance, tools, colors, id_prefix, include_plotly_cdn):
+def create_cell_section(df, df_sig, df_sw, cancer_type, relevance, tools, colors, id_prefix, include_plotly):
     df_cell = df[(df["cancer_type"] == cancer_type) & (df["relevance"] == relevance)]
     if df_cell.empty:
         return ""
@@ -302,7 +302,7 @@ def create_cell_section(df, df_sig, df_sw, cancer_type, relevance, tools, colors
     )
     fig = create_agreement_heatmaps(df_cell, tools, colors, f"{cancer_type} ({relevance})")
     html += '<div class="plot-container">\n'
-    html += fig.to_html(include_plotlyjs=("cdn" if include_plotly_cdn else False), full_html=False, div_id=f"agree_{tab_id}")
+    html += fig.to_html(include_plotlyjs=include_plotly, full_html=False, div_id=f"agree_{tab_id}", config=PLOT_CONFIG)
     html += "</div>\n"
     html += "<h4>Summary</h4>\n"
     html += create_summary_table(df_cell)
@@ -323,7 +323,7 @@ def create_cell_section(df, df_sig, df_sw, cancer_type, relevance, tools, colors
         )
         box_fig = create_signature_activity_boxplot(df_sw_cell, active_sigs, colors, f"{cancer_type} ({relevance})")
         html += '<div class="plot-container">\n'
-        html += box_fig.to_html(include_plotlyjs=False, full_html=False, div_id=f"activity_box_{tab_id}")
+        html += box_fig.to_html(include_plotlyjs=False, full_html=False, div_id=f"activity_box_{tab_id}", config=PLOT_CONFIG)
         html += "</div>\n"
 
     html += "</div>\n"
@@ -376,7 +376,7 @@ def generate_report(df: pd.DataFrame, df_sig: pd.DataFrame, df_activity: pd.Data
     if df.empty:
         content = (
             '<div class="section"><h2>No Data</h2>'
-            "<p>all_tool_agreement.tsv has no rows — check that the tools actually "
+            "<p>summary/tool_agreement.tsv has no rows — check that the tools actually "
             "produced contribution files, and that get_agreement_tools() selected more than one tool "
             "(agreement needs at least 2 tools to compare).</p></div>"
         )
@@ -419,13 +419,13 @@ def generate_report(df: pd.DataFrame, df_sig: pd.DataFrame, df_activity: pd.Data
                 "be sensitive to catalog composition for that tissue.</p>\n"
             )
             tabs_html += '<div class="plot-container">\n'
-            tabs_html += create_burden_vs_unknown_section(df_activity, tools, include_plotly_cdn=True)
+            tabs_html += create_burden_vs_unknown_section(df_activity, tools, include_plotly=True)
             tabs_html += "</div>\n</div>\n"
 
         first = not has_activity
         for cancer_type in cancer_types:
             for relevance in relevances:
-                section = create_cell_section(df, df_sig, df_sw, cancer_type, relevance, tools, colors, "", include_plotly_cdn=first)
+                section = create_cell_section(df, df_sig, df_sw, cancer_type, relevance, tools, colors, "", include_plotly=first)
                 if section:
                     section = section.replace('class="tab-content"', 'class="tab-content active"', 1) if first else section
                     tabs_html += section

@@ -35,9 +35,13 @@ MP_index = pd.read_csv(snakemake.input.matrix_order, header=None).squeeze()
 W = W.reindex(MP_index)
 X = X.reindex(MP_index, axis=0)
 
+# extra arguments from the config (tool_overrides: musical: extra) are added or replace these
+arguments = {'method': 'likelihood_bidirectional', 'thresh': 0.001,
+             **snakemake.params.get('extra', {})}  # noqa: F821
+
 # Fit one sample at a time
 H = pd.concat(
-    [musical.refit.refit(X[[s]], W, method='likelihood_bidirectional', thresh=0.001)[0]
+    [musical.refit.refit(X[[s]], W, **arguments)[0]
      for s in X.columns],
     axis=1,
 )

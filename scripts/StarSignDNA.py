@@ -41,6 +41,14 @@ sys.stderr = open(snakemake.log.stderr, "w")  # noqa: F821
 N_ITERATIONS = snakemake.params.n_iterations  # noqa: F821
 DATA_TYPE = snakemake.params.data_type  # noqa: F821
 
+# extra flags from the config (tool_overrides: starsigndna: extra): `true` gives the flag alone, `false` leaves it out
+extra_flags = []
+for flag, value in snakemake.params.get("extra", {}).items():  # noqa: F821
+    if value is True:
+        extra_flags.append(flag)
+    elif value is not False:
+        extra_flags += [flag, str(value)]
+
 counts = pd.read_csv(snakemake.input.data, sep="\t", index_col=0)  # noqa: F821
 signatures = pd.read_csv(snakemake.input.signature_db, sep="\t", index_col=0)  # noqa: F821
 
@@ -59,7 +67,7 @@ for i, s in enumerate(counts.columns):
     counts[[s]].T.to_csv(matrix_file, sep="\t", index_label=False)
     cmd = ["starsigndna", "refit", str(matrix_file), str(signature_file),
            "--output-folder", str(out_dir), "--n-iterations", str(N_ITERATIONS),
-           "--data-type", DATA_TYPE]
+           "--data-type", DATA_TYPE] + extra_flags
     print("running:", " ".join(cmd), flush=True)
     subprocess.run(cmd, check=True, stdout=sys.stdout, stderr=sys.stderr)
 

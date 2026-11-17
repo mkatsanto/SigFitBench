@@ -3,15 +3,15 @@
 Concatenate per-sample evaluation TSVs and derive per-run summary statistics.
 
 Reads all individual per-sample TSVs produced by evaluate_tool_performance,
-concatenates them into all_per_sample_metrics.tsv, then groups by
+concatenates them into summary/per_sample_metrics.tsv, then groups by
 (cancer_type, data_type, tool, replicate, num_muts) to compute
 aggregate statistics across samples in each run.
 
 Usage:
     python compute_summary_metrics.py \\
         --input-files file1.tsv file2.tsv ... \\
-        --output-per-sample all_per_sample_metrics.tsv \\
-        --output all_evaluation_metrics.tsv
+        --output-per-sample summary/per_sample_metrics.tsv \\
+        --output summary/evaluation_metrics.tsv
 """
 
 import argparse

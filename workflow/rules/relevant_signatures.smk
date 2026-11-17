@@ -32,7 +32,7 @@ rule identify_active_signatures:
         script=os.path.join(workflow.basedir, "..", "scripts", "identify_active_signatures.py")
     output:
         active_list=os.path.join(
-            config['output_dir'],
+            config['output_dir'], "internal",
             "relevant_signatures",
             "{data_type}_{num_muts}_active_signatures.txt"
         )

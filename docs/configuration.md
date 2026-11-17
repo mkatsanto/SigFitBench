@@ -60,8 +60,8 @@ real_datasets:
     reference_fasta: "input/ref/genome.fa"              # same genome build as the VCFs, with a .fai index
 ```
 
-An entry with `vcf_dir` instead of `catalog` has its catalog built by the workflow (SigVCF), one column per VCF. SigVCF runs
-from its source folder: set `sigvcf_source` (default: the `SigVCF` folder next to SigFitBench).
+An entry with `vcf_dir` instead of `catalog` has its catalog built from the VCFs with
+[SigVCF](https://github.com/mkatsanto/SigVCF), one column per VCF.
 
 Each entry is one catalog. Columns named `Tissue::Sample` are split into one group per
 tissue; `cancer_types` keeps only the tissues listed. Catalogs without `::` in their

@@ -30,7 +30,11 @@ lcd <- function(mutation_catalogue, signatures) {
   exposures <- matrix(0, nrow = n_sigs, ncol = ncol(mutation_catalogue),
                        dimnames = list(colnames(signatures), colnames(mutation_catalogue)))
   for (i in seq_len(ncol(mutation_catalogue))) {
-    fit <- lsei(A = signatures, B = mutation_catalogue[, i], G = G, H = H, verbose = FALSE)
+    arguments <- list(A = signatures, B = mutation_catalogue[, i], G = G, H = H, verbose = FALSE)
+    # extra arguments from the config (tool_overrides: yapsa: extra) are added or replace these
+    extra <- snakemake@params[["extra"]]
+    arguments[names(extra)] <- extra
+    fit <- do.call(lsei, arguments)
     exposures[, i] <- fit$X
   }
   exposures

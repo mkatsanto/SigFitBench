@@ -19,13 +19,19 @@ cosmic3 <- as.data.frame(t(cosmic3))
 mut_matrix <- read.csv(snakemake@input[["data"]], sep="\t", row.names=1, header=TRUE, check.names=FALSE)
 mut_matrix <- as.data.frame(t(mut_matrix))
 
-stopifnot(identical(colnames(cosmic3), colnames(mut_matrix)))
+# Match the mutation types by name, so the order of the two files does not matter
+stopifnot(setequal(colnames(cosmic3), colnames(mut_matrix)))
+mut_matrix <- mut_matrix[, colnames(cosmic3), drop = FALSE]
 
 df <- data.frame()
 for (sample in rownames(mut_matrix)) {
   cat("Processing sample", sample, "\n")
-  res <- whichSignatures(tumor.ref=mut_matrix, sample.id=sample, signatures.ref=cosmic3,
-                         contexts.needed=TRUE, signature.cutoff=0)
+  arguments <- list(tumor.ref=mut_matrix, sample.id=sample, signatures.ref=cosmic3,
+                    contexts.needed=TRUE, signature.cutoff=0)
+  # extra arguments from the config (tool_overrides: deconstructsigs: extra) are added or replace these
+  extra <- snakemake@params[["extra"]]
+  arguments[names(extra)] <- extra
+  res <- do.call(whichSignatures, arguments)
   # deconstructSigs reports shares of the sample; convert to numbers of mutations
   vals <- as.data.frame(c(res$weights[1,] * sum(mut_matrix[sample, ])))
   rownames(vals) <- sample

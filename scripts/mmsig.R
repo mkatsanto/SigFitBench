@@ -20,15 +20,19 @@ mut_mat <- read.csv(snakemake@input[["data"]], sep="\t", row.names=1, header=TRU
 # Fit one sample at a time
 set.seed(0)
 df <- do.call(rbind, lapply(colnames(mut_mat), function(s) {
-  sig_out <- mm_fit_signatures(muts.input=mut_mat[, s, drop=FALSE],
-                               sig.input=cosmic3,
-                               input.format="classes",
-                               sample.sigt.profs=NULL,
-                               strandbias=FALSE,
-                               bootstrap=FALSE,
-                               refcheck=FALSE,
-                               cos_sim_threshold=0.01,
-                               dbg=FALSE)
+  arguments <- list(muts.input=mut_mat[, s, drop=FALSE],
+                    sig.input=cosmic3,
+                    input.format="classes",
+                    sample.sigt.profs=NULL,
+                    strandbias=FALSE,
+                    bootstrap=FALSE,
+                    refcheck=FALSE,
+                    cos_sim_threshold=0.01,
+                    dbg=FALSE)
+  # extra arguments from the config (tool_overrides: mmsig: extra) are added or replace these
+  extra <- snakemake@params[["extra"]]
+  arguments[names(extra)] <- extra
+  sig_out <- do.call(mm_fit_signatures, arguments)
   sig_out$estimate
 }))
 # mmsig reports shares of the sample; convert to numbers of mutations

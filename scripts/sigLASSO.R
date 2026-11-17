@@ -26,8 +26,12 @@ sig_names <- colnames(cosmic)
 zero_col <- setNames(rep(0, length(sig_names)), sig_names)
 
 fit_cols <- lapply(colnames(counts), function(s) {
+  arguments <- list(sample_spectrum = counts[, s, drop = FALSE], signature = cosmic, plot = FALSE)
+  # extra arguments from the config (tool_overrides: siglasso: extra) are added or replace these
+  extra <- snakemake@params[["extra"]]
+  arguments[names(extra)] <- extra
   res <- tryCatch(
-    siglasso(counts[, s, drop = FALSE], cosmic, plot = FALSE),
+    do.call(siglasso, arguments),
     error = function(e) {
       message(sprintf("siglasso failed on sample %s: %s -- writing all-zero contribution", s, conditionMessage(e)))
       NULL

@@ -7,40 +7,43 @@ Resource Usage tab.
 The benchmark TSVs themselves carry no condition info (just Snakemake's fixed
 s/h:m:s/max_rss/... columns — see snakemake.benchmark.BenchmarkRecord.get_header()), so
 tool/data_type/cancer_type/relevance/num_muts/replicate are recovered from each file's
-path, which follows the fixed layout written in tools.smk:
-    {output_dir}/benchmarks/{data_type}/{cancer_type}/{relevance}/{num_muts}/rep_{rep}/{tool}_benchmark.tsv
+path, which follows the results layout (see common.smk):
+    {output_dir}/runs/{data_type}/{cancer_type}/{num_muts}_mutations[_relevant]/benchmarks/{tool}_rep{rep}.tsv
 
 Usage:
     python aggregate_tool_benchmarks.py \\
         --input-files file1.tsv file2.tsv ... \\
-        --output all_tool_benchmarks.tsv
+        --output summary/tool_benchmarks.tsv
 """
 
 import argparse
+import re
 import sys
 from pathlib import Path
 
 import pandas as pd
 
 
+BENCHMARK_PATH = re.compile(
+    r"runs/(?P<data_type>[^/]+)/(?P<cancer_type>[^/]+)/(?P<num_muts>[^/_]+)_mutations(?P<ending>[^/]*)"
+    r"/benchmarks/(?P<tool>[^/]+)_rep(?P<replicate>\d+)\.tsv$"
+)
+
+
 def parse_condition(path: str) -> dict:
     """Recover tool/data_type/cancer_type/relevance/num_muts/replicate from a benchmark
-    file's path (see module docstring for the fixed layout). Returns {} if the path
+    file's path (see module docstring for the layout). Returns {} if the path
     doesn't match (so the row can be skipped with a warning rather than crash)."""
-    p = Path(path)
-    rep_dir, num_muts, relevance, cancer_type, data_type = (
-        p.parent.name, p.parent.parent.name, p.parent.parent.parent.name,
-        p.parent.parent.parent.parent.name, p.parent.parent.parent.parent.parent.name,
-    )
-    if not rep_dir.startswith("rep_") or not p.name.endswith("_benchmark.tsv"):
+    m = BENCHMARK_PATH.search(Path(path).as_posix())
+    if not m:
         return {}
     return dict(
-        tool=p.name[: -len("_benchmark.tsv")],
-        data_type=data_type,
-        cancer_type=cancer_type,
-        relevance=relevance,
-        num_muts=num_muts,
-        replicate=rep_dir[len("rep_"):],
+        tool=m["tool"],
+        data_type=m["data_type"],
+        cancer_type=m["cancer_type"],
+        relevance="relevant" if m["ending"] == "_relevant" else "standard",
+        num_muts=m["num_muts"],
+        replicate=m["replicate"],
     )
 
 

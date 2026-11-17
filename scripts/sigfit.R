@@ -25,7 +25,11 @@ signatures <- t(as.matrix(cosmic3))
 mean_rows <- list()
 lower_rows <- list()
 for (s in rownames(counts)) {
-  fit <- fit_signatures(counts=counts[s, , drop=FALSE], signatures=signatures, chains=1, seed=0)
+  arguments <- list(counts=counts[s, , drop=FALSE], signatures=signatures, chains=1, seed=0)
+  # extra arguments from the config (tool_overrides: sigfit: extra) are added or replace these
+  extra <- snakemake@params[["extra"]]
+  arguments[names(extra)] <- extra
+  fit <- do.call(fit_signatures, arguments)
   exposures <- retrieve_pars(fit, par="exposures", hpd_prob=0.90)
   mean_rows[[s]] <- as.data.frame(exposures$mean, row.names=s)
   lower_rows[[s]] <- as.data.frame(exposures$lower_90, row.names=s)

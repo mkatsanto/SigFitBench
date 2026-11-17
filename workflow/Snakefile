@@ -99,73 +99,70 @@ rule all:
             data_type=active_data_types,
             cancer_type=config.get("cancer_types", ["Head-SCC"]),
             num_muts=config["num_muts"],
-            relevance=config.get("relevance_modes", ["standard", "relevant"]),
+            relevance=relevance_endings(),
             tool=get_selected_tools(),
             rep=range(config.get("num_realizations", 1))
         ),
-        # Custom fixed-weights tool results (data_type == "custom")
+        # Custom fixed-weights tool results (data_type == "synth_custom")
         custom_tool_results = expand(
             tool_result("{tool}"),
-            data_type="custom",
+            data_type="synth_custom",
             cancer_type=list(config.get("custom_datasets", {})),
-            relevance=config.get("relevance_modes", ["standard"]),
+            relevance=relevance_endings(),
             num_muts=config["num_muts"],
             rep=range(config.get("num_realizations", 1)),
             tool=get_selected_tools(),
-        ) if "custom" in config.get("data_types", []) else [],
+        ) if "synth_custom" in config.get("data_types", []) else [],
         # Real-sample tool results (data_type == "real", rep always 0, no ground truth)
         real_tool_results = expand(
             tool_result("{tool}"),
             data_type="real",
-            num_muts="none",
+            num_muts=REAL_NUM_MUTS,
             rep=0,
             cancer_type=get_all_real_cancer_types(),
-            relevance=config.get("relevance_modes", ["standard"]),
+            relevance=relevance_endings(),
             tool=get_selected_tools(),
         ) if "real" in config.get("data_types", []) else [],
-        # Ground-truth-based summary + report (realsim/custom only — real has no
+        # Ground-truth-based summary + report (synth_realistic/synth_custom only — real has no
         # ground truth, so compute_summary_metrics would have nothing to
         # aggregate and get_eval_files() returns []; only request these when there's
         # actually ground-truth data to summarize).
         all_metrics = (
-            os.path.join(config['output_dir'], "all_evaluation_metrics.tsv")
+            summary_file("evaluation_metrics")
             if _has_ground_truth_data else []
         ),
         per_sample_metrics = (
-            os.path.join(config['output_dir'], "all_per_sample_metrics.tsv")
+            summary_file("per_sample_metrics")
             if _has_ground_truth_data else []
         ),
-        bootstrap_quality = os.path.join(config['output_dir'], "all_bootstrap_quality.tsv") if config.get("evaluation", {}).get("run_bootstrap_quality", False) else [],
+        bootstrap_quality = summary_file("bootstrap_quality") if config.get("evaluation", {}).get("run_bootstrap_quality", False) else [],
         # Wall time + peak memory per tool run (independent of ground truth, so requested
         # whenever there's anything for the tool rules to have benchmarked).
         tool_benchmarks = (
-            os.path.join(config['output_dir'], "all_tool_benchmarks.tsv")
+            summary_file("tool_benchmarks")
             if _has_ground_truth_data else []
         ),
-        # One report per data type: realistic simulations, synthetic
-        html_reports=[
-            os.path.join(config['output_dir'], f"sigfitbench_report_{name}.html")
-            for name in report_names
-        ],
+        # One report per data type: realistic simulations, custom simulations
+        html_reports=[report_file(name) for name in report_names],
         # Cross-tool agreement summary + report (real only — no ground truth, so tools
         # are compared to each other instead of to a known answer).
         tool_agreement = (
-            os.path.join(config['output_dir'], "all_tool_agreement.tsv")
+            summary_file("tool_agreement")
             if _has_no_ground_truth_data else []
         ),
         signature_calls = (
-            os.path.join(config['output_dir'], "all_signature_calls.tsv")
+            summary_file("signature_calls")
             if _has_no_ground_truth_data else []
         ),
         sample_activity = (
-            os.path.join(config['output_dir'], "all_sample_activity.tsv")
+            summary_file("sample_activity")
             if _has_no_ground_truth_data else []
         ),
         signature_weights = (
-            os.path.join(config['output_dir'], "all_signature_weights.tsv")
+            summary_file("signature_weights")
             if _has_no_ground_truth_data else []
         ),
         agreement_report = (
-            os.path.join(config['output_dir'], "sigfitbench_report_real_samples.html")
+            report_file("real")
             if _has_no_ground_truth_data else []
         ),

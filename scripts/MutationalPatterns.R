@@ -14,19 +14,25 @@ suppressPackageStartupMessages(library(dplyr))
 sink(file(snakemake@log[["stdout"]], open="wt"), type="output")
 sink(file(snakemake@log[["stderr"]], open="wt"), type="message")
 
-cosmic3 <- as.matrix(read.table(snakemake@input[["cosmic"]], sep="\t", header=TRUE, row.names=1, check.names=FALSE))
+reference_sigs <- as.matrix(read.table(snakemake@input[["cosmic"]], sep="\t", header=TRUE, row.names=1, check.names=FALSE))
 mut_mat <- read.csv(snakemake@input[["data"]], sep="\t", row.names=1, header=TRUE)
-mut_mat <- mut_mat[rownames(cosmic3), , drop = FALSE]
+mut_mat <- mut_mat[rownames(reference_sigs), , drop = FALSE]
+
+extra <- snakemake@params[["extra"]]
+strict <- snakemake@params[["strict"]]
 
 # Fit one sample at a time
-fit <- matrix(0, nrow=ncol(cosmic3), ncol=ncol(mut_mat),
-              dimnames=list(colnames(cosmic3), colnames(mut_mat)))
+fit <- matrix(0, nrow=ncol(reference_sigs), ncol=ncol(mut_mat),
+              dimnames=list(colnames(reference_sigs), colnames(mut_mat)))
 for (s in colnames(mut_mat)) {
   one <- as.matrix(mut_mat[, s, drop=FALSE]) + 0.0001
-  if (snakemake@params[["strict"]]) {
-    contribution <- fit_to_signatures_strict(one, cosmic3)$fit_res$contribution
+  arguments <- list(mut_matrix=one, signatures=reference_sigs)
+  # extra arguments from the config (tool_overrides: mutationalpatterns: extra) are added or replace these
+  arguments[names(extra)] <- extra
+  if (strict) {
+    contribution <- do.call(fit_to_signatures_strict, arguments)$fit_res$contribution
   } else {
-    contribution <- fit_to_signatures(one, cosmic3)$contribution
+    contribution <- do.call(fit_to_signatures, arguments)$contribution
   }
   fit[rownames(contribution), s] <- contribution[, 1]
 }

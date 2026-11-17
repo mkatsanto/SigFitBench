@@ -28,16 +28,20 @@ from plotly.subplots import make_subplots
 DEFAULT_MIN_CONTRIBUTION = 10.0  # fallback; must match evaluate_tool_performance.py's default
 
 # Names shown in the report for each data type
-DATA_TYPE_LABELS = {'realsim': 'Realistic simulations', 'custom': 'Synthetic'}
+DATA_TYPE_LABELS = {'synth_realistic': 'Realistic simulations', 'synth_custom': 'Custom simulations'}
 DATA_TYPE_NOTES = {
-    'realsim': 'Signature weights taken from real tumours (PCAWG); mutations drawn from them.',
-    'custom': 'Signature weights from your own table; mutations drawn from them.',
+    'synth_realistic': 'Signature weights taken from real tumours (PCAWG); mutations drawn from them.',
+    'synth_custom': 'Signature weights from your own table; mutations drawn from them.',
 }
 
 
 # ============================================================================
 # Configuration Classes - Centralize all tool and column configurations
 # ============================================================================
+
+# Settings of every plot: resize with the page; no Plotly logo, which links to plotly.com
+PLOT_CONFIG = {'responsive': True, 'displaylogo': False}
+
 
 class ReportMetadata:
     """Centralize all tool colors, symbols, column mappings, and display order."""
@@ -95,25 +99,6 @@ class ReportMetadata:
             'mmsig', 'sigminer'
         ]
         
-        # Column name mappings (for flexibility in input data)
-        self.column_aliases = {
-            'precision': ['precision', 'P'],
-            'recall': ['recall', 'R'],
-            'f1_score': ['f1_score', 'F1'],
-            'mcc': ['mcc', 'MCC'],
-            'tae': ['tae', 'TAE'],
-            'nrmse': ['nrmse', 'nRMSE'],
-            'fp': ['fp', 'FP'],
-            'fn': ['fn', 'FN']
-        }
-    
-    def _find_col(self, df, aliases):
-        """Find the first matching column name from a list of aliases."""
-        for alias in aliases:
-            if alias in df.columns:
-                return alias
-        return None
-    
     def get_base_method(self, tool):
         """Get the base method for a tool."""
         return self.base_method_map.get(tool, tool)
@@ -170,35 +155,6 @@ class CancerData:
 # ============================================================================
 # Helper Functions for Penalty Display
 # ============================================================================
-
-def get_hover_text_with_penalty(df, tool, text_items=None):
-    """
-    Generate hover text that includes penalty information for penalty methods.
-    
-    Args:
-        df: DataFrame containing the data
-        tool: Tool name
-        text_items: List of additional text items to include (e.g., ["Mutations: 10000"])
-    
-    Returns:
-        List of hover text strings, one per data point
-    """
-    tool_data = df[df['tool'] == tool]
-    
-    hover_texts = []
-    for idx, row in tool_data.iterrows():
-        items = []
-        if text_items:
-            items.extend(text_items)
-        
-        # Add penalty information if available
-        if 'optimal_penalty' in row and pd.notna(row['optimal_penalty']):
-            items.append(f"Penalty: {row['optimal_penalty']}")
-        
-        hover_texts.append('<br>'.join(items) if items else '')
-    
-    return hover_texts
-
 
 # ============================================================================
 # HTML Template with CSS Styling
@@ -1070,7 +1026,7 @@ def create_resource_usage_section(df_benchmarks, colors):
     )
     html += '<div class="plot-container">\n'
     html += fig.to_html(include_plotlyjs=False, full_html=False, div_id='resource_usage_plot',
-                        config={'responsive': True})
+                        config=PLOT_CONFIG)
     html += '</div>\n'
     html += '</section>\n'
     return html
@@ -1366,113 +1322,6 @@ def create_appendix_section(df, df_raw=None, unknown_sig_config=None, cosmic_ver
     return html
 
 
-def create_performance_metrics_section():
-    """Create Performance Metrics section with comprehensive explanations."""
-    html = '''
-    <section id="metrics" class="section">
-        <h2>Performance Metrics</h2>
-        
-        <div class="info-box" style="background: #e3f2fd; border-left-color: #2196f3; margin-bottom: 1.5rem;">
-            <h4 style="margin-bottom: 0.5rem;">Acronym Reference</h4>
-            <p style="margin-bottom: 0.3rem;"><strong>P</strong> = Precision</p>
-            <p style="margin-bottom: 0.3rem;"><strong>R</strong> = Recall (Sensitivity)</p>
-            <p style="margin-bottom: 0.3rem;"><strong>F1</strong> = F1 Score (harmonic mean of P and R)</p>
-            <p style="margin-bottom: 0.3rem;"><strong>TAE</strong> = Total Absolute Error</p>
-            <p style="margin-bottom: 0.3rem;"><strong>nRMSE</strong> = Normalized Root Mean Squared Error</p>
-            <p style="margin-bottom: 0.3rem;"><strong>MCC</strong> = Matthews Correlation Coefficient</p>
-            <p style="margin-bottom: 0.3rem;"><strong>FP</strong> = False Positive | <strong>FN</strong> = False Negative | <strong>TP</strong> = True Positive</p>
-        </div>
-        
-        <table>
-            <tr>
-                <th style="width: 20%;">Metric</th>
-                <th style="width: 50%;">Description</th>
-                <th style="width: 30%;">Interpretation</th>
-            </tr>
-            <tr>
-                <td><strong>F1 Score</strong></td>
-                <td>Harmonic mean of precision and recall. Balances the trade-off between 
-                    identifying correct signatures and avoiding false positives.
-                    <br><br><strong>Formula:</strong> <code>F1 = 2&middot;(P&middot;R)/(P+R) = 2&middot;TP / (2&middot;TP + FP + FN)</code></td>
-                <td>Higher is better<br>Range: 0-1<br>0.8+ is excellent</td>
-            </tr>
-            <tr>
-                <td><strong>Precision (P)</strong></td>
-                <td>Proportion of identified signatures that are truly present. 
-                    Low precision means many false positives.
-                    <br><br><strong>Formula:</strong> <code>P = TP / (TP + FP)</code></td>
-                <td>Higher is better<br>Range: 0-1<br>Penalizes over-fitting</td>
-            </tr>
-            <tr>
-                <td><strong>Recall (R)</strong></td>
-                <td>Proportion of true signatures that were successfully identified. 
-                    Low recall means missing real signatures.
-                    <br><br><strong>Formula:</strong> <code>R = TP / (TP + FN)</code></td>
-                <td>Higher is better<br>Range: 0-1<br>Penalizes under-fitting</td>
-            </tr>
-            <tr>
-                <td><strong>TAE</strong></td>
-                <td>Total Absolute Error - sum of absolute differences between estimated and 
-                    true signature contributions.
-                    <br><br><strong>Formula:</strong> <code>TAE = &sum;|w<sub>i</sub><sup>true</sup> &minus; w<sub>i</sub><sup>est</sup>|</code>
-                    <br>where <code>w<sub>i</sub></code> is the contribution (weight) of signature <code>i</code></td>
-                <td>Lower is better<br>Measures weight accuracy</td>
-            </tr>
-            <tr>
-                <td><strong>nRMSE</strong></td>
-                <td>Normalized Root Mean Square Error - RMS of errors in signature 
-                    weight estimation, normalized by total mutation count.
-                    <br><br><strong>Formula:</strong> <code>nRMSE = &radic;( (1/n) &sum;((w<sub>i</sub><sup>true</sup> &minus; w<sub>i</sub><sup>est</sup>) / N)&sup2; )</code>
-                    <br>where <code>n</code> is the number of signatures and <code>N</code> is the total number of mutations</td>
-                <td>Lower is better<br>Sensitive to outliers<br>Per-sample metric</td>
-            </tr>
-            <tr>
-                <td><strong>MCC</strong></td>
-                <td>Matthews Correlation Coefficient - quality of binary classification 
-                    (signature present/absent), accounting for class imbalance.
-                    <br><br><strong>Formula:</strong> <code>MCC = (TP&middot;TN &minus; FP&middot;FN) / &radic;((TP+FP)(TP+FN)(TN+FP)(TN+FN))</code></td>
-                <td>Higher is better<br>Range: -1 to +1<br>0.5+ is good</td>
-            </tr>
-            <tr>
-                <td><strong>False Positives (FP)</strong></td>
-                <td>Number of signatures incorrectly identified as present when they are absent (over-fitting indicators).
-                    <br><br><strong>Definition:</strong> Signatures reported by the tool but not in the ground truth</td>
-                <td>Lower is better<br>Indicates over-fitting</td>
-            </tr>
-            <tr>
-                <td><strong>False Negatives (FN)</strong></td>
-                <td>Number of true signatures missed by the tool (under-fitting indicators).
-                    <br><br><strong>Definition:</strong> Signatures in the ground truth but not reported by the tool</td>
-                <td>Lower is better<br>Indicates under-fitting</td>
-            </tr>
-            <tr>
-                <td><strong>True Positives (TP)</strong></td>
-                <td>Number of signatures correctly identified as present.
-                    <br><br><strong>Definition:</strong> Signatures both in ground truth and reported by the tool</td>
-                <td>Higher is better<br>Correct detection</td>
-            </tr>
-            <tr>
-                <td><strong>True Negatives (TN)</strong></td>
-                <td>Number of signatures correctly identified as absent.
-                    <br><br><strong>Definition:</strong> Signatures neither in ground truth nor reported by the tool</td>
-                <td>Higher is better<br>Correct rejection</td>
-            </tr>
-        </table>
-        
-        <div class="info-box" style="margin-top: 1.5rem;">
-            <h4>What Makes a Good Tool?</h4>
-            <ul style="margin-left: 1.5rem; margin-top: 0.5rem;">
-                <li><strong>High F1 Score:</strong> Correctly identifies signatures without too many false positives</li>
-                <li><strong>Low TAE/nRMSE:</strong> Accurately estimates signature contributions</li>
-                <li><strong>Robustness:</strong> Performs well across different mutation burdens and cancer types</li>
-                <li><strong>Stability:</strong> Consistent results across independent realizations</li>
-            </ul>
-        </div>
-    </section>
-    '''
-    return html
-
-
 # ============================================================================
 # Plotting Functions
 # ============================================================================
@@ -1528,202 +1377,91 @@ def get_tool_display_order():
     return ReportMetadata().tool_display_order
 
 
-def create_precision_recall_plot(df, cancer_type, tools, colors, df_per_sample=None):
-    """Create precision-recall scatter plot with marker size by mutation count."""
-    fig = go.Figure()
-    
-    method_symbols = get_method_symbols()
-    
-    for tool in tools:
-        tool_data = df[df['tool'] == tool]
-        
-        if len(tool_data) == 0:
-            continue
-        
-        # Get base method to determine symbol
-        base_method = get_tool_base_method(tool)
-        symbol = method_symbols.get(base_method, 'circle')
-        
-        # Scale marker size by mutation count (log scale for visibility)
-        # Reduced from 8+15 to 5+10 for smaller overall markers while keeping size variation
-        marker_sizes = 5 + 10 * np.log10(tool_data['num_muts']) / np.log10(tool_data['num_muts'].max())
-        
-        # Build custom hover text with mutation count and penalty (if applicable)
-        hover_text_items = []
-        for _, row in tool_data.iterrows():
-            items = [f"Mutations: {int(row['num_muts']):,}"]
-            if 'optimal_penalty' in row and pd.notna(row['optimal_penalty']):
-                items.append(f"Penalty: {row['optimal_penalty']}")
-            hover_text_items.append('<br>'.join(items))
-            
-        fig.add_trace(go.Scatter(
-            x=tool_data['R_mean'],
-            y=tool_data['P_mean'],
-            mode='markers',
-            name=tool,
-            marker=dict(
-                size=marker_sizes,
-                color=colors.get(tool, '#999'),
-                symbol=symbol,
-                opacity=0.6,  # Transparency so overlapping markers are visible
-                line=dict(width=1, color='black')
-            ),
-            error_x=dict(array=tool_data['R_sem'], type='data'),
-            error_y=dict(array=tool_data['P_sem'], type='data'),
-            text=hover_text_items,
-            hovertemplate='<b>%{fullData.name}</b><br>Recall: %{x:.3f}<br>Precision: %{y:.3f}<br>%{text}<extra></extra>'
-        ))
-    
-    # Add F1 score reference lines
-    for f1_val, f1_label in [(0.5, 'F1=0.5'), (0.7, 'F1=0.7'), (0.9, 'F1=0.9')]:
-        recall = np.linspace(0.01, 1, 100)
-        precision = f1_val * recall / (2 * recall - f1_val * recall)
-        precision = np.clip(precision, 0, 1)
-        
-        fig.add_trace(go.Scatter(
-            x=recall,
-            y=precision,
-            mode='lines',
-            name=f1_label,
-            line=dict(dash='dash', color='gray', width=1),
-            opacity=0.5,
-            hoverinfo='name'
-        ))
-    
-    # Add theoretical threshold lines if unknown signatures present
-    # Note: With unknown signatures present, theoretical max Recall is < 1.0
-    # because unknowns will be counted as FN in the evaluation
-    # Add theoretical max Recall and Precision lines if available in per-sample metrics
-    if df_per_sample is not None:
-        cancer_per_sample = df_per_sample[df_per_sample['cancer_type'] == cancer_type]
-        if len(cancer_per_sample) > 0:
-            # The per-sample evaluation step writes theoretical_max_Recall and theoretical_max_Precision
-            # We will plot the average across samples and always show the line so the reader can see the
-            # theoretical performance ceiling (even if it's near 1.0).
-            if 'theoretical_max_Recall' in cancer_per_sample.columns:
-                theoretical_recall = cancer_per_sample['theoretical_max_Recall'].mean()
-                if not np.isnan(theoretical_recall):
-                    fig.add_trace(go.Scatter(
-                        x=[theoretical_recall, theoretical_recall],
-                        y=[0, 1],
-                        mode='lines',
-                        name='Max Recall',
-                        line=dict(color='red', width=2, dash='dash'),
-                        showlegend=True,
-                        hovertemplate=f'Theoretical Max Recall: {theoretical_recall:.3f}<br>(Unknown sigs counted as FN)<extra></extra>'
-                    ))
-
-            if 'theoretical_max_Precision' in cancer_per_sample.columns:
-                theoretical_precision = cancer_per_sample['theoretical_max_Precision'].mean()
-                if not np.isnan(theoretical_precision):
-                    fig.add_trace(go.Scatter(
-                        x=[0, 1],
-                        y=[theoretical_precision, theoretical_precision],
-                        mode='lines',
-                        name='Max Precision',
-                        line=dict(color='blue', width=2, dash='dot'),
-                        showlegend=True,
-                        hovertemplate=f'Theoretical Max Precision: {theoretical_precision:.3f}<extra></extra>'
-                    ))
-    
-    fig.update_layout(
-        title=dict(
-            text=f'{cancer_type}',
-            font=dict(size=16)
-        ),
-        xaxis_title='R (Recall) ↑',
-        yaxis_title='P (Precision) ↑',
-        xaxis=dict(range=[0, 1.05]),
-        yaxis=dict(range=[0, 1.05]),
-        height=500,
-        hovermode='closest',
-        showlegend=True,
-        legend=dict(itemdoubleclick='toggleothers'),
-        autosize=True
-    )
-    
-    return fig
+# The six scores of the per-sample plots: (column, row, col, axis label)
+SAMPLE_METRICS = [
+    ('F1', 1, 1, 'F1 ↑'),
+    ('TAE', 1, 2, 'TAE ↓'),
+    ('MCC', 2, 1, 'MCC ↑'),
+    ('nRMSE', 2, 2, 'nRMSE ↓'),
+    ('num_FP', 3, 1, 'FP Count'),
+    ('num_FN', 3, 2, 'FN Count'),
+]
 
 
-def create_violin_plots(df, cancer_type, tools, colors):
-    """Create scatter plots with error bars showing metric variability across conditions.
-    
-    Note: This shows aggregated data (mean ± std across 20 samples per condition).
-    Error bars represent the variability across samples for each condition.
-    """
+def _sample_metrics_grid(cancer_samples, cancer_type):
+    """3x2 grid for the per-sample plots, and the scores the data has. (None, None) if none."""
     fig = make_subplots(
-        rows=2, cols=2,
-        subplot_titles=['F1 Score (Aggregated)', 'TAE (Aggregated)', 
-                       'MCC (Aggregated)', 'nRMSE (Aggregated)'],
-        vertical_spacing=0.15,
+        rows=3, cols=2,
+        subplot_titles=['F1 ↑', 'TAE ↓', 'MCC ↑', 'nRMSE ↓', 'FP Sigs', 'FN Sigs'],
+        vertical_spacing=0.18,  # room for the vertical x labels
         horizontal_spacing=0.12
     )
-    
-    # Metrics with their standard deviations
-    metrics = [
-        ('F1_mean', 'F1_std', 1, 1, 'F1 ↑'),
-        ('TAE', 'TAE_std', 1, 2, 'TAE ↓'),
-        ('MCC_mean', 'MCC_std', 2, 1, 'MCC ↑'),
-        ('nRMSE', 'nRMSE_std', 2, 2, 'nRMSE ↓'),
+    metrics = [m for m in SAMPLE_METRICS if m[0] in cancer_samples.columns]
+    if not metrics:
+        print(f"  No valid metrics found for {cancer_type}")
+        return None, None
+    return fig, metrics
+
+
+def _finish_burden_figure(fig, mut_burdens, trace_burdens, title, x_title, tick_size, height,
+                          margin, boxmode=None):
+    """Dropdown to pick the mutation count, axis labels and layout of the per-sample plots.
+    trace_burdens gives the mutation count of each trace, in the order they were added."""
+    buttons = [
+        dict(
+            label=f"{int(burden):,} mutations",
+            method='update',
+            args=[
+                {'visible': [tb == burden for tb in trace_burdens]},
+                {'title': {'text': f'{title} - {int(burden):,} Mutations'}}
+            ]
+        )
+        for burden in mut_burdens
     ]
-    
-    for tool in tools:
-        tool_data = df[df['tool'] == tool].sort_values('num_muts')
-        
-        if len(tool_data) == 0:
-            continue
-        
-        for metric_mean, metric_std, row, col, ylabel in metrics:
-            # Create error bars if std is available
-            if metric_std and metric_std in tool_data.columns:
-                error_y = dict(
-                    type='data',
-                    array=tool_data[metric_std],
-                    visible=True
-                )
-            else:
-                error_y = None
-            
-            fig.add_trace(
-                go.Scatter(
-                    x=[tool] * len(tool_data),
-                    y=tool_data[metric_mean],
-                    mode='markers',
-                    name=tool,
-                    marker=dict(
-                        size=10,
-                        color=colors.get(tool, '#999'),
-                        opacity=0.7
-                    ),
-                    error_y=error_y,
-                    showlegend=(row == 1 and col == 1),
-                    legendgroup=tool,
-                    text=[f"{int(m):,} muts<br>n={int(n)} samples" for m, n in zip(tool_data['num_muts'], tool_data['num_samples'])],
-                    hovertemplate='<b>%{fullData.name}</b><br>%{text}<br>Mean: %{y:.3f}<extra></extra>'
-                ),
+    for _, row, col, label in SAMPLE_METRICS:
+        fig.update_yaxes(title_text=label, row=row, col=col)
+    for col in range(1, 3):
+        for row in range(1, 4):
+            fig.update_xaxes(
+                title_text=x_title if row == 3 else '',  # label only the bottom row
+                tickangle=-90,
+                tickfont=dict(size=tick_size),
                 row=row, col=col
             )
-    
-    # Update y-axes labels with direction indicators
-    fig.update_yaxes(title_text='F1 ↑', row=1, col=1)
-    fig.update_yaxes(title_text='TAE ↓', row=1, col=2)
-    fig.update_yaxes(title_text='MCC ↑', row=2, col=1)
-    fig.update_yaxes(title_text='nRMSE ↓', row=2, col=2)
-    
-    # Update x-axes
-    for row in [1, 2]:
-        for col in [1, 2]:
-            fig.update_xaxes(title_text='Tool', row=row, col=col)
-    
+    layout = dict(height=height,
+                  title_text=f'{title} - {int(mut_burdens[0]):,} Mutations',
+                  showlegend=True)
+    if boxmode:
+        layout['boxmode'] = boxmode
     fig.update_layout(
-        height=700,
-        title_text=f'Performance Variability Across Mutation Burdens<br><sub>Error bars show ± std dev across samples</sub>',
-        showlegend=True,
-        legend=dict(x=1.05, y=1, itemdoubleclick='toggleothers'),
+        **layout,
+        scattermode='overlay',  # sample points drawn over the boxes
+        updatemenus=[
+            dict(
+                buttons=buttons,
+                direction='down',
+                pad={'r': 10, 't': 10},
+                showactive=True,
+                x=1.15,
+                xanchor='left',
+                y=1.0,
+                yanchor='top',
+                bgcolor='white',
+                bordercolor='#ccc',
+                borderwidth=1
+            )
+        ],
+        legend=dict(
+            orientation='v',
+            x=1.02,
+            xanchor='left',
+            y=0.5,
+            yanchor='middle',
+            itemdoubleclick='toggleothers'
+        ),
+        margin=margin,
         autosize=True
     )
-    
-    return fig
 
 
 def create_per_sample_violin_plots(df_samples, cancer_type, tools, colors):
@@ -1746,27 +1484,8 @@ def create_per_sample_violin_plots(df_samples, cancer_type, tools, colors):
     # Get unique mutation burdens sorted
     mut_burdens = sorted(cancer_samples['num_muts'].unique())
     
-    # Use 3x2 layout for metrics (boxplots with sample markers)
-    fig = make_subplots(
-        rows=3, cols=2,
-        subplot_titles=['F1 ↑', 'TAE ↓', 'MCC ↑', 'nRMSE ↓', 'FP Sigs', 'FN Sigs'],
-        vertical_spacing=0.18,  # Increased from 0.12 to prevent x-label overlap
-        horizontal_spacing=0.12
-    )
-    
-    # Metrics configuration
-    metrics = [
-        ('F1', 1, 1, 'F1 ↑'),
-        ('TAE', 1, 2, 'TAE ↓'),
-        ('MCC', 2, 1, 'MCC ↑'),
-        ('nRMSE', 2, 2, 'nRMSE ↓'),
-        ('num_FP', 3, 1, 'FP Count'),
-        ('num_FN', 3, 2, 'FN Count'),
-    ]
-    metrics = [(m, r, c, l) for m, r, c, l in metrics if m in cancer_samples.columns]
-    
-    if not metrics:
-        print(f"  No valid metrics found for {cancer_type}")
+    fig, metrics = _sample_metrics_grid(cancer_samples, cancer_type)
+    if fig is None:
         return None
     
     # Track all traces for visibility control
@@ -1884,75 +1603,8 @@ def create_per_sample_violin_plots(df_samples, cancer_type, tools, colors):
                         all_traces.append(trace)
                         trace_burdens.append(burden)  # Track burden for threshold trace
     
-    # Create dropdown menu for mutation burden selection
-    buttons = []
-    
-    for burden_idx, burden in enumerate(mut_burdens):
-        # Calculate which traces should be visible for this burden
-        # Use explicit burden tracking instead of rigid indexing
-        visible = [tb == burden for tb in trace_burdens]
-        
-        buttons.append(
-            dict(
-                label=f"{int(burden):,} mutations",
-                method='update',
-                args=[
-                    {'visible': visible},
-                    {'title': {'text': f'Performance per Method - {int(burden):,} Mutations'}}
-                ]
-            )
-        )
-    
-    # Update y-axes labels
-    fig.update_yaxes(title_text='F1 ↑', row=1, col=1)
-    fig.update_yaxes(title_text='TAE ↓', row=1, col=2)
-    fig.update_yaxes(title_text='MCC ↑', row=2, col=1)
-    fig.update_yaxes(title_text='nRMSE ↓', row=2, col=2)
-    fig.update_yaxes(title_text='FP Count', row=3, col=1)
-    fig.update_yaxes(title_text='FN Count', row=3, col=2)
-    
-    # Update x-axes labels
-    for col in range(1, 3):
-        for row in range(1, 4):
-            fig.update_xaxes(
-                title_text='Method' if row == 3 else '',  # Only show "Method" label on bottom row
-                tickangle=-90,  # Changed from -45 to -90 for vertical labels
-                tickfont=dict(size=10),
-                row=row, col=col
-            )
-    
-    fig.update_layout(
-        height=1000,  # Increased from 900 to 1000 to accommodate spacing and vertical labels
-        title_text=f'Performance per Method - {int(mut_burdens[0]):,} Mutations',
-        showlegend=True,
-        boxmode='group',  # Group boxes by tool
-        scattermode='overlay',  # Allow scatter points to overlay on boxplots
-        updatemenus=[
-            dict(
-                buttons=buttons,
-                direction='down',
-                pad={'r': 10, 't': 10},
-                showactive=True,
-                x=1.15,
-                xanchor='left',
-                y=1.0,
-                yanchor='top',
-                bgcolor='white',
-                bordercolor='#ccc',
-                borderwidth=1
-            )
-        ],
-        legend=dict(
-            orientation='v',
-            x=1.02,
-            xanchor='left',
-            y=0.5,
-            yanchor='middle',
-            itemdoubleclick='toggleothers'
-        ),
-        margin=dict(l=60, r=250, t=100, b=120),  # Increased bottom margin from 80 to 120 for vertical labels
-        autosize=True
-    )
+    _finish_burden_figure(fig, mut_burdens, trace_burdens, 'Performance per Method', x_title='Method',
+                          tick_size=10, height=1000, margin=dict(l=60, r=250, t=100, b=120), boxmode='group')
     
     return fig
 
@@ -1977,32 +1629,13 @@ def create_per_method_sample_plots(df_samples, cancer_type, tools, colors):
     # Get unique mutation burdens sorted
     mut_burdens = sorted(cancer_samples['num_muts'].unique())
     
-    # Use 3x2 layout for metrics
-    fig = make_subplots(
-        rows=3, cols=2,
-        subplot_titles=['F1 ↑', 'TAE ↓', 'MCC ↑', 'nRMSE ↓', 'FP Sigs', 'FN Sigs'],
-        vertical_spacing=0.18,
-        horizontal_spacing=0.12
-    )
-    
-    # Metrics configuration
-    metrics = [
-        ('F1', 1, 1, 'F1 ↑'),
-        ('TAE', 1, 2, 'TAE ↓'),
-        ('MCC', 2, 1, 'MCC ↑'),
-        ('nRMSE', 2, 2, 'nRMSE ↓'),
-        ('num_FP', 3, 1, 'FP Count'),
-        ('num_FN', 3, 2, 'FN Count'),
-    ]
-    metrics = [(m, r, c, l) for m, r, c, l in metrics if m in cancer_samples.columns]
-    
-    if not metrics:
-        print(f"  No valid metrics found for {cancer_type}")
+    fig, metrics = _sample_metrics_grid(cancer_samples, cancer_type)
+    if fig is None:
         return None
     
     # Track all traces for visibility control
     all_traces = []
-    trace_burdens = []
+    trace_burdens = []  # Track which burden each trace belongs to
     
     # Create traces for EACH burden separately
     for burden in mut_burdens:
@@ -2132,72 +1765,8 @@ def create_per_method_sample_plots(df_samples, cancer_type, tools, colors):
                         all_traces.append(trace)
                         trace_burdens.append(burden)
     
-    # Create dropdown menu for mutation burden selection
-    buttons = []
-    
-    for burden_idx, burden in enumerate(mut_burdens):
-        visible = [tb == burden for tb in trace_burdens]
-        
-        buttons.append(
-            dict(
-                label=f"{int(burden):,} mutations",
-                method='update',
-                args=[
-                    {'visible': visible},
-                    {'title': {'text': f'Sample-by-Sample Performance - {int(burden):,} Mutations'}}
-                ]
-            )
-        )
-    
-    # Update y-axes labels
-    fig.update_yaxes(title_text='F1 ↑', row=1, col=1)
-    fig.update_yaxes(title_text='TAE ↓', row=1, col=2)
-    fig.update_yaxes(title_text='MCC ↑', row=2, col=1)
-    fig.update_yaxes(title_text='nRMSE ↓', row=2, col=2)
-    fig.update_yaxes(title_text='FP Count', row=3, col=1)
-    fig.update_yaxes(title_text='FN Count', row=3, col=2)
-    
-    # Update x-axes labels
-    for col in range(1, 3):
-        for row in range(1, 4):
-            fig.update_xaxes(
-                title_text='Sample' if row == 3 else '',
-                tickangle=-90,
-                tickfont=dict(size=8),
-                row=row, col=col
-            )
-    
-    fig.update_layout(
-        height=900,
-        title_text=f'Sample-by-Sample Performance - {int(mut_burdens[0]):,} Mutations',
-        showlegend=True,
-        scattermode='overlay',
-        updatemenus=[
-            dict(
-                buttons=buttons,
-                direction='down',
-                pad={'r': 10, 't': 10},
-                showactive=True,
-                x=1.15,
-                xanchor='left',
-                y=1.0,
-                yanchor='top',
-                bgcolor='white',
-                bordercolor='#ccc',
-                borderwidth=1
-            )
-        ],
-        legend=dict(
-            orientation='v',
-            x=1.02,
-            xanchor='left',
-            y=0.5,
-            yanchor='middle',
-            itemdoubleclick='toggleothers'
-        ),
-        margin=dict(l=60, r=250, t=80, b=100),
-        autosize=True
-    )
+    _finish_burden_figure(fig, mut_burdens, trace_burdens, 'Sample-by-Sample Performance', x_title='Sample',
+                          tick_size=8, height=900, margin=dict(l=60, r=250, t=80, b=100))
 
     return fig
 
@@ -2205,8 +1774,8 @@ def create_per_method_sample_plots(df_samples, cancer_type, tools, colors):
 def _load_sample_signature_tables(df_samples, cancer_type, results_dir):
     """Per mutation burden, one row per simulated sample with its mean TAE / F1 / ENP across
     tools and its ground-truth signature set (frozenset of signatures with weight > 0, from
-    results_dir/generated_data/{data_type}/weights_{cancer}-w_{rep}-{burden}.dat — "realsim"
-    and "custom" both have ground truth and use the same layout).
+    results_dir/runs/{data_type}/{cancer}/{burden}_mutations/samples/known_answer_rep{rep}.dat —
+    "synth_realistic" and "synth_custom" both have ground truth and use the same layout).
 
     Returns a list of (burden, DataFrame[replicate, sample, TAE, F1?, highest_ENP_known?, sigs])
     sorted by burden (hardest sample first), or None if metrics or ground-truth weights are
@@ -2219,8 +1788,8 @@ def _load_sample_signature_tables(df_samples, cancer_type, results_dir):
         return None
     has_rep = 'replicate' in cancer_samples.columns
     metric_cols = [c for c in ['TAE', 'F1', 'highest_ENP_known'] if c in cancer_samples.columns]
-    data_type = cancer_samples['data_type'].iloc[0] if 'data_type' in cancer_samples.columns else 'realsim'
-    weights_dir = Path(results_dir) / 'generated_data' / data_type
+    data_type = cancer_samples['data_type'].iloc[0] if 'data_type' in cancer_samples.columns else 'synth_realistic'
+    cancer_dir = Path(results_dir) / 'runs' / data_type / cancer_type
 
     tables = []
     for burden in sorted(cancer_samples['num_muts'].unique()):
@@ -2231,7 +1800,7 @@ def _load_sample_signature_tables(df_samples, cancer_type, results_dir):
             tae['replicate'] = 0
         presence = {}
         for rep in tae['replicate'].unique():
-            path = weights_dir / f'weights_{cancer_type}-w_{int(rep)}-{int(burden)}.dat'
+            path = cancer_dir / f'{int(burden)}_mutations' / 'samples' / f'known_answer_rep{int(rep)}.dat'
             if not path.exists():
                 continue
             w = pd.read_csv(path, sep='\t', index_col=0) > 0
@@ -2279,7 +1848,7 @@ def create_hard_samples_row_plot(df_samples, cancer_type, results_dir, out_of_re
          spectral flatness of the sample's most diffuse known signature — hardest samples
          highlighted in red, to show whether hard samples share a diffuse dominant signature.
     All panels use each sample's simulated ground-truth signature set (present = weight > 0,
-    from results_dir/generated_data/{data_type}/weights_{cancer}-w_{rep}-{burden}.dat).
+    from results_dir/runs/{data_type}/{cancer}/{burden}_mutations/samples/known_answer_rep{rep}.dat).
     Returns None if per-sample TAE or the ground-truth weights are unavailable.
     """
     from scipy.stats import mannwhitneyu
@@ -2409,197 +1978,6 @@ def create_hard_samples_row_plot(df_samples, cancer_type, results_dir, out_of_re
     if has_enp:
         fig.update_xaxes(title_text='ENP (known)', row=1, col=4)
         fig.update_yaxes(title_text='Mean TAE', row=1, col=4)
-    return fig
-
-
-def create_optimization_stability_plots(df_samples, cancer_type, tools, colors):
-    """
-    Create box plots showing distribution of per-sample metrics.
-    This shows optimization stability - tighter distributions indicate more stable results.
-    
-    Args:
-        df_samples: DataFrame with per-sample metrics
-        cancer_type: Cancer type to filter
-        tools: List of tool names
-        colors: Dict mapping tool names to colors
-        
-    Returns:
-        Plotly figure or None if no data
-    """
-    # Filter for this cancer type
-    cancer_samples = df_samples[df_samples['cancer_type'] == cancer_type]
-    
-    if len(cancer_samples) == 0:
-        return None
-    
-    # Get unique mutation burdens
-    mut_burdens = sorted(cancer_samples['num_muts'].unique())
-
-    # Metrics we care about for stability (per-sample)
-    metrics_info = [
-        ('F1', 1, 1, 'F1 ↑'),
-        ('TAE', 1, 2, 'TAE ↓'),
-        ('MCC', 1, 3, 'MCC ↑'),
-        ('P', 2, 1, 'Precision ↑'),
-        ('R', 2, 2, 'Recall ↑'),
-        ('num_FP', 2, 3, 'FP Count ↓'),
-    ]
-
-    # If we have multiple realizations, compute per-sample variance across realizations
-    if 'realization' in cancer_samples.columns and cancer_samples['realization'].nunique() > 1:
-        # Group by tool, num_muts, sample and compute variance for each metric
-        var_df = cancer_samples.groupby(['tool', 'num_muts', 'sample']).agg(
-            {
-                'F1': 'var',
-                'TAE': 'var',
-                'MCC': 'var',
-                'P': 'var',
-                'R': 'var',
-                'num_FP': 'var'
-            }
-        ).reset_index()
-
-        # Rename variance columns to indicate they are variances
-        var_df = var_df.rename(columns={
-            'F1': 'F1_var', 'TAE': 'TAE_var', 'MCC': 'MCC_var',
-            'P': 'P_var', 'R': 'R_var', 'num_FP': 'num_FP_var'
-        })
-
-        # Create 2x3 grid of violin plots showing variance distributions per sample
-        fig = make_subplots(rows=2, cols=3,
-                            subplot_titles=['F1', 'TAE', 'MCC', 'Precision', 'Recall', 'FP Count'],
-                            vertical_spacing=0.15, horizontal_spacing=0.10)
-
-        # Track which tools have been shown in legend
-        shown_tools = set()
-
-        for tool in tools:
-            tool_color = colors.get(tool, '#999')
-            
-            for i, burden in enumerate(mut_burdens):
-                subset = var_df[(var_df['tool'] == tool) & (var_df['num_muts'] == burden)]
-                if len(subset) == 0:
-                    continue
-                
-                show_legend = tool not in shown_tools
-
-                # For each metric, add violin of the variance values across samples
-                for metric, row, col, ylabel in metrics_info:
-                    var_col = f"{metric}_var"
-                    if var_col not in subset.columns:
-                        continue
-                    fig.add_trace(
-                        go.Violin(
-                            y=subset[var_col].fillna(0),
-                            x=[i] * len(subset),
-                            name=tool,
-                            legendgroup=tool,
-                            line_color=tool_color,
-                            fillcolor=tool_color,
-                            opacity=0.6,
-                            box_visible=True,
-                            meanline_visible=True,
-                            showlegend=bool(show_legend and (row == 1 and col == 1)),
-                            meta={'tool': tool, 'mut_burden': int(burden)}
-                        ),
-                        row=row, col=col
-                    )
-                
-                if show_legend:
-                    shown_tools.add(tool)
-        
-        # Update x-axes to show mutation burdens
-        for row, col in [(1,1), (1,2), (1,3), (2,1), (2,2), (2,3)]:
-            fig.update_xaxes(
-                tickmode='array',
-                tickvals=list(range(len(mut_burdens))),
-                ticktext=[f'{int(m):,}' for m in mut_burdens],
-                title_text='Mutation Burden',
-                row=row, col=col
-            )
-
-        # Update y-axes labels for variance plots
-        fig.update_yaxes(title_text='Variance', row=1, col=1)
-        fig.update_yaxes(title_text='Variance', row=1, col=2)
-        fig.update_yaxes(title_text='Variance', row=1, col=3)
-        fig.update_yaxes(title_text='Variance', row=2, col=1)
-        fig.update_yaxes(title_text='Variance', row=2, col=2)
-        fig.update_yaxes(title_text='Variance', row=2, col=3)
-
-        fig.update_layout(
-            height=700,
-            showlegend=True,
-            autosize=True
-        )
-
-        return fig
-
-    # Fallback: if no realizations, keep previous box-based view (distribution of per-sample metrics)
-    fig = make_subplots(
-        rows=2, cols=3,
-        subplot_titles=['F1 Score', 'TAE (Total Absolute Error)', 'MCC',
-                       'Precision', 'Recall', 'False Positives'],
-        vertical_spacing=0.15,
-        horizontal_spacing=0.10
-    )
-
-    for tool in tools:
-        tool_color = colors.get(tool, '#999')
-
-        for burden in mut_burdens:
-            subset = cancer_samples[(cancer_samples['tool'] == tool) & 
-                                   (cancer_samples['num_muts'] == burden)]
-
-            if len(subset) == 0:
-                continue
-
-            burden_label = f'{int(burden):,}'
-            x_label = f'{tool}<br>{burden_label}'
-            show_legend = bool(burden == mut_burdens[0])  # Only show legend for first burden
-
-            for metric, row, col, ylabel in metrics_info:
-                fig.add_trace(
-                    go.Box(
-                        y=subset[metric],
-                        name=f'{tool} ({burden_label})',
-                        legendgroup=tool,
-                        marker_color=tool_color,
-                        showlegend=show_legend and (row == 1 and col == 1),
-                        boxmean='sd',  # Show mean and std dev
-                        boxpoints='all',  # Show all individual points
-                        jitter=0.3,  # Add jitter to see overlapping points
-                        pointpos=-1.8,  # Position points to the left of box
-                        x=[x_label] * len(subset),
-                        text=[f"Sample: {s}" for s in subset['sample']],
-                        hovertemplate='%{text}<br>Value: %{y:.3f}<extra></extra>',
-                        marker=dict(
-                            size=4,
-                            opacity=0.6,
-                            line=dict(width=0.5, color='white')
-                        )
-                    ),
-                    row=row, col=col
-                )
-
-    # Update axes
-    for row in [1, 2]:
-        for col in [1, 2, 3]:
-            fig.update_xaxes(title_text='Tool / Mutation Burden', row=row, col=col)
-
-    fig.update_yaxes(title_text='F1 ↑', row=1, col=1)
-    fig.update_yaxes(title_text='TAE ↓', row=1, col=2)
-    fig.update_yaxes(title_text='MCC ↑', row=1, col=3)
-    fig.update_yaxes(title_text='Precision ↑', row=2, col=1)
-    fig.update_yaxes(title_text='Recall ↑', row=2, col=2)
-    fig.update_yaxes(title_text='FP Count ↓', row=2, col=3)
-
-    fig.update_layout(
-        height=700,
-        title_text=f'Optimization Stability: Per-Sample Metric Distributions ({cancer_type})',
-        showlegend=True,
-        autosize=True
-    )
-
     return fig
 
 
@@ -3229,1557 +2607,18 @@ def create_aggregate_plot(df, tools, colors, df_per_sample=None):
     return fig
 
 
-def create_bootstrap_zscore_histograms(df_bootstrap, cancer_type, tools, colors):
-    """
-    Create barplots showing distribution of z-scores for each mutation burden.
-    Values >3 are binned into a ">3" category.
-    
-    Args:
-        df_bootstrap: DataFrame with bootstrap quality assessment results
-        cancer_type: Cancer type to filter
-        tools: List of tool names
-        colors: Dict mapping tool names to colors
-        
-    Returns:
-        Dict mapping mutation burden to Plotly figure, or None if no data
-    """
-    cancer_data = df_bootstrap[df_bootstrap['cancer_type'] == cancer_type]
-    
-    if len(cancer_data) == 0:
-        return None
-    
-    burdens = sorted(cancer_data['num_muts'].unique())
-    
-    # Create a separate figure for each mutation burden
-    figures = {}
-    
-    for burden in burdens:
-        burden_data = cancer_data[cancer_data['num_muts'] == burden]
-        
-        # Create subplots for the three z-score metrics
-        fig = make_subplots(
-            rows=1, cols=3,
-            subplot_titles=('Z-score L1', 'Z-score L2', 'Z-score Cosine Similarity'),
-            horizontal_spacing=0.12
-        )
-        
-        # Define bins: <-3, -3 to -2, -2 to -1, -1 to 0, 0 to 1, 1 to 2, 2 to 3, >3
-        bin_edges = [-np.inf, -3, -2, -1, 0, 1, 2, 3, np.inf]
-        bin_labels = ['<-3', '[-3,-2)', '[-2,-1)', '[-1,0)', '[0,1)', '[1,2)', '[2,3)', '>3']
-        
-        for col_idx, metric in enumerate(['z_L1', 'z_L2', 'z_cos'], start=1):
-            # Calculate histogram for each tool
-            for tool in tools:
-                tool_data = burden_data[burden_data['tool'] == tool]
-                
-                if len(tool_data) == 0:
-                    continue
-                
-                tool_color = colors.get(tool, '#999')
-                
-                # Bin the z-scores
-                z_values = tool_data[metric].values
-                counts, _ = np.histogram(z_values, bins=bin_edges)
-                
-                # Create bar plot
-                fig.add_trace(
-                    go.Bar(
-                        x=bin_labels,
-                        y=counts,
-                        name=tool,
-                        marker_color=tool_color,
-                        showlegend=(col_idx == 1),  # Only show legend in first subplot
-                        legendgroup=tool,
-                        hovertemplate=f'{tool}<br>Bin: %{{x}}<br>Count: %{{y}}<extra></extra>'
-                    ),
-                    row=1, col=col_idx
-                )
-        
-        # Update axes
-        for col in [1, 2, 3]:
-            fig.update_xaxes(title_text="Z-score Bin", row=1, col=col)
-        
-        fig.update_yaxes(title_text="Number of Samples", row=1, col=1)
-        fig.update_yaxes(title_text="Number of Samples", row=1, col=2)
-        fig.update_yaxes(title_text="Number of Samples", row=1, col=3)
-        
-        burden_label = f'{int(burden):,}'
-        fig.update_layout(
-            height=450,
-            title_text=f'Bootstrap Z-score Distribution - {burden_label} mutations ({cancer_type})<br>'
-                      f'<sub>Bars show how many samples fall in each z-score range. Lower |z| indicates better fit.</sub>',
-            showlegend=True,
-            barmode='group',  # Group bars by tool
-            autosize=True
-        )
-        
-        figures[burden] = fig
-    
-    return figures
-
-
-def create_bootstrap_summary_by_burden(df_bootstrap, cancer_type, tools, colors):
-    """
-    Create separate bar plots for each mutation burden showing z-score distributions.
-    
-    Args:
-        df_bootstrap: DataFrame with bootstrap quality assessment results
-        cancer_type: Cancer type to filter
-        tools: List of tool names
-        colors: Dict mapping tool names to colors
-        
-    Returns:
-        Dict mapping mutation burden to Plotly figure, or None if no data
-    """
-    cancer_data = df_bootstrap[df_bootstrap['cancer_type'] == cancer_type]
-    
-    if len(cancer_data) == 0:
-        return None
-    
-    burdens = sorted(cancer_data['num_muts'].unique())
-    
-    # Create a separate figure for each mutation burden
-    figures = {}
-    
-    for burden in burdens:
-        burden_data = cancer_data[cancer_data['num_muts'] == burden]
-        
-        # Create subplots for the three z-score metrics
-        fig = make_subplots(
-            rows=1, cols=3,
-            subplot_titles=('Z-score L1', 'Z-score L2', 'Z-score Cosine Similarity'),
-            horizontal_spacing=0.12
-        )
-        
-        # Calculate mean z-scores for each tool
-        for tool in tools:
-            tool_data = burden_data[burden_data['tool'] == tool]
-            
-            if len(tool_data) == 0:
-                continue
-            
-            tool_color = colors.get(tool, '#999')
-            
-            # Calculate mean and std for each metric
-            z_L1_mean = tool_data['z_L1'].mean()
-            z_L1_std = tool_data['z_L1'].std()
-            z_L2_mean = tool_data['z_L2'].mean()
-            z_L2_std = tool_data['z_L2'].std()
-            z_cos_mean = tool_data['z_cos'].mean()
-            z_cos_std = tool_data['z_cos'].std()
-            
-            # Z-score L1 bar
-            fig.add_trace(
-                go.Bar(
-                    x=[tool],
-                    y=[z_L1_mean],
-                    error_y=dict(type='data', array=[z_L1_std]),
-                    name=tool,
-                    marker_color=tool_color,
-                    showlegend=True,
-                    legendgroup=tool,
-                    hovertemplate=f'{tool}<br>Mean: %{{y:.2f}}<br>Std: {z_L1_std:.2f}<extra></extra>'
-                ),
-                row=1, col=1
-            )
-            
-            # Z-score L2 bar
-            fig.add_trace(
-                go.Bar(
-                    x=[tool],
-                    y=[z_L2_mean],
-                    error_y=dict(type='data', array=[z_L2_std]),
-                    name=tool,
-                    marker_color=tool_color,
-                    showlegend=False,
-                    legendgroup=tool,
-                    hovertemplate=f'{tool}<br>Mean: %{{y:.2f}}<br>Std: {z_L2_std:.2f}<extra></extra>'
-                ),
-                row=1, col=2
-            )
-            
-            # Z-score cos bar
-            fig.add_trace(
-                go.Bar(
-                    x=[tool],
-                    y=[z_cos_mean],
-                    error_y=dict(type='data', array=[z_cos_std]),
-                    name=tool,
-                    marker_color=tool_color,
-                    showlegend=False,
-                    legendgroup=tool,
-                    hovertemplate=f'{tool}<br>Mean: %{{y:.2f}}<br>Std: {z_cos_std:.2f}<extra></extra>'
-                ),
-                row=1, col=3
-            )
-        
-        # Add reference lines at z = ±2 and ±3
-        for col in [1, 2, 3]:
-            fig.add_hline(y=2, line_dash="dash", line_color="red", opacity=0.5, row=1, col=col, 
-                         annotation_text="95% CI" if col == 3 else None, annotation_position="right")
-            fig.add_hline(y=-2, line_dash="dash", line_color="red", opacity=0.5, row=1, col=col)
-            fig.add_hline(y=3, line_dash="dash", line_color="darkred", opacity=0.3, row=1, col=col,
-                         annotation_text="99.7% CI" if col == 3 else None, annotation_position="right")
-            fig.add_hline(y=-3, line_dash="dash", line_color="darkred", opacity=0.3, row=1, col=col)
-            fig.add_hline(y=0, line_dash="solid", line_color="gray", opacity=0.5, row=1, col=col)
-        
-        fig.update_xaxes(title_text="Tool", row=1, col=1)
-        fig.update_xaxes(title_text="Tool", row=1, col=2)
-        fig.update_xaxes(title_text="Tool", row=1, col=3)
-        
-        fig.update_yaxes(title_text="Z-score (lower = better fit)", row=1, col=1)
-        fig.update_yaxes(title_text="Z-score (lower = better fit)", row=1, col=2)
-        fig.update_yaxes(title_text="Z-score (higher = better fit)", row=1, col=3)
-        
-        burden_label = f'{int(burden):,}'
-        fig.update_layout(
-            height=450,
-            title_text=f'Bootstrap Quality Assessment - {burden_label} mutations<br>'
-                      f'<sub>Mean Z-scores with error bars showing std dev across bootstrap replicates</sub>',
-            showlegend=True,
-            autosize=True
-        )
-        
-        figures[burden] = fig
-    
-    return figures
-
-
-def create_bootstrap_zscore_distribution(df_bootstrap, tools, colors):
-    """
-    Create histogram/violin plots showing distribution of z-scores for bootstrap quality assessment.
-    
-    Args:
-        df_bootstrap: DataFrame with bootstrap quality assessment results
-        tools: List of tool names
-        colors: Dict mapping tool names to colors
-        
-    Returns:
-        Plotly figure
-    """
-    fig = make_subplots(
-        rows=1, cols=3,
-        subplot_titles=('Z-score L1 (Lower is Better Fit)', 
-                       'Z-score L2 (Lower is Better Fit)', 
-                       'Z-score Cosine (Lower is Better Fit)'),
-        horizontal_spacing=0.1
-    )
-    
-    for tool in tools:
-        tool_data = df_bootstrap[df_bootstrap['tool'] == tool]
-        
-        if len(tool_data) == 0:
-            continue
-        
-        # Z-score L1
-        fig.add_trace(
-            go.Violin(
-                y=tool_data['z_L1'],
-                name=tool,
-                legendgroup=tool,
-                scalegroup=tool,
-                line_color=colors.get(tool, '#999'),
-                showlegend=True,
-                box_visible=True,
-                meanline_visible=True
-            ),
-            row=1, col=1
-        )
-        
-        # Z-score L2
-        fig.add_trace(
-            go.Violin(
-                y=tool_data['z_L2'],
-                name=tool,
-                legendgroup=tool,
-                scalegroup=tool,
-                line_color=colors.get(tool, '#999'),
-                showlegend=False,
-                box_visible=True,
-                meanline_visible=True
-            ),
-            row=1, col=2
-        )
-        
-        # Z-score cosine
-        fig.add_trace(
-            go.Violin(
-                y=tool_data['z_cos'],
-                name=tool,
-                legendgroup=tool,
-                scalegroup=tool,
-                line_color=colors.get(tool, '#999'),
-                showlegend=False,
-                box_visible=True,
-                meanline_visible=True
-            ),
-            row=1, col=3
-        )
-    
-    # Add reference lines at z = ±2 (95% confidence) and z = ±3 (99.7% confidence)
-    for col in [1, 2, 3]:
-        fig.add_hline(y=2, line_dash="dash", line_color="red", opacity=0.3, row=1, col=col)
-        fig.add_hline(y=-2, line_dash="dash", line_color="red", opacity=0.3, row=1, col=col)
-        fig.add_hline(y=3, line_dash="dash", line_color="darkred", opacity=0.2, row=1, col=col)
-        fig.add_hline(y=-3, line_dash="dash", line_color="darkred", opacity=0.2, row=1, col=col)
-        fig.add_hline(y=0, line_dash="solid", line_color="gray", opacity=0.5, row=1, col=col)
-    
-    fig.update_yaxes(title_text="Z-score", row=1, col=1)
-    fig.update_yaxes(title_text="Z-score", row=1, col=2)
-    fig.update_yaxes(title_text="Z-score", row=1, col=3)
-    
-    fig.update_layout(
-        height=500,
-        showlegend=True,
-        title_text='Bootstrap Quality Assessment: Z-score Distributions',
-        hovermode='closest',
-        autosize=True
-    )
-    
-    return fig
-
-
-def create_bootstrap_scatter(df_bootstrap, tools, colors):
-    """
-    Create scatter plot comparing original fit quality vs bootstrap mean.
-    
-    Args:
-        df_bootstrap: DataFrame with bootstrap quality assessment results
-        tools: List of tool names
-        colors: Dict mapping tool names to colors
-        
-    Returns:
-        Plotly figure
-    """
-    fig = make_subplots(
-        rows=1, cols=3,
-        subplot_titles=('L1 Distance', 'L2 Distance', 'Cosine Similarity'),
-        horizontal_spacing=0.1
-    )
-    
-    for tool in tools:
-        tool_data = df_bootstrap[df_bootstrap['tool'] == tool]
-        
-        if len(tool_data) == 0:
-            continue
-        
-        # L1: Original vs Bootstrap
-        fig.add_trace(
-            go.Scatter(
-                x=tool_data['L1_bootstrap_mean'],
-                y=tool_data['L1'],
-                mode='markers',
-                name=tool,
-                legendgroup=tool,
-                marker=dict(
-                    size=6,
-                    color=colors.get(tool, '#999'),
-                    opacity=0.6,
-                    line=dict(width=0.5, color='black')
-                ),
-                text=[f"Sample: {s}<br>Z-score: {z:.2f}" 
-                      for s, z in zip(tool_data['sample'], tool_data['z_L1'])],
-                hovertemplate='<b>%{fullData.name}</b><br>Bootstrap: %{x:.4f}<br>Original: %{y:.4f}<br>%{text}<extra></extra>',
-                showlegend=True
-            ),
-            row=1, col=1
-        )
-        
-        # L2: Original vs Bootstrap
-        fig.add_trace(
-            go.Scatter(
-                x=tool_data['L2_bootstrap_mean'],
-                y=tool_data['L2'],
-                mode='markers',
-                name=tool,
-                legendgroup=tool,
-                marker=dict(
-                    size=6,
-                    color=colors.get(tool, '#999'),
-                    opacity=0.6,
-                    line=dict(width=0.5, color='black')
-                ),
-                text=[f"Sample: {s}<br>Z-score: {z:.2f}" 
-                      for s, z in zip(tool_data['sample'], tool_data['z_L2'])],
-                hovertemplate='<b>%{fullData.name}</b><br>Bootstrap: %{x:.4f}<br>Original: %{y:.4f}<br>%{text}<extra></extra>',
-                showlegend=False
-            ),
-            row=1, col=2
-        )
-        
-        # Cosine: Original vs Bootstrap
-        fig.add_trace(
-            go.Scatter(
-                x=tool_data['cos_bootstrap_mean'],
-                y=tool_data['cos'],
-                mode='markers',
-                name=tool,
-                legendgroup=tool,
-                marker=dict(
-                    size=6,
-                    color=colors.get(tool, '#999'),
-                    opacity=0.6,
-                    line=dict(width=0.5, color='black')
-                ),
-                text=[f"Sample: {s}<br>Z-score: {z:.2f}" 
-                      for s, z in zip(tool_data['sample'], tool_data['z_cos'])],
-                hovertemplate='<b>%{fullData.name}</b><br>Bootstrap: %{x:.4f}<br>Original: %{y:.4f}<br>%{text}<extra></extra>',
-                showlegend=False
-            ),
-            row=1, col=3
-        )
-    
-    # Add diagonal reference line (y = x) to all subplots
-    for col in [1, 2, 3]:
-        fig.add_trace(
-            go.Scatter(
-                x=[0, 1],
-                y=[0, 1],
-                mode='lines',
-                line=dict(color='gray', dash='dash'),
-                showlegend=False,
-                hoverinfo='skip'
-            ),
-            row=1, col=col
-        )
-    
-    fig.update_xaxes(title_text="Bootstrap Mean", row=1, col=1)
-    fig.update_xaxes(title_text="Bootstrap Mean", row=1, col=2)
-    fig.update_xaxes(title_text="Bootstrap Mean", row=1, col=3)
-    
-    fig.update_yaxes(title_text="Original Fit", row=1, col=1)
-    fig.update_yaxes(title_text="Original Fit", row=1, col=2)
-    fig.update_yaxes(title_text="Original Fit", row=1, col=3)
-    
-    fig.update_layout(
-        height=500,
-        showlegend=True,
-        title_text='Bootstrap Quality: Original Fit vs Bootstrap Mean (Points on diagonal = expected)',
-        hovermode='closest',
-        autosize=True
-    )
-    
-    return fig
-
-
-def create_enp_vs_f1_plot(df_per_sample, cancer_type, tools, colors):
-    """Create scatter plot of ENP vs F1 score for unknown signature scenarios.
-    
-    Args:
-        df_per_sample: DataFrame with per-sample metrics including F1 and ENP
-        cancer_type: Cancer type to plot
-        tools: List of tools to include
-        colors: Dictionary mapping tools to colors
-    
-    Returns:
-        plotly.graph_objects.Figure or None if no data
-    """
-    if df_per_sample is None:
-        return None
-    
-    # Check if ENP column exists
-    if 'ENP' not in df_per_sample.columns:
-        print(f"  Warning: ENP column not found in per-sample data")
-        return None
-    
-    # Filter for this cancer type
-    cancer_samples = df_per_sample[df_per_sample['cancer_type'] == cancer_type].copy()
-    
-    if len(cancer_samples) == 0:
-        return None
-    
-    # Remove rows with NaN ENP or F1
-    cancer_samples = cancer_samples.dropna(subset=['ENP', 'F1'])
-    
-    if len(cancer_samples) == 0:
-        print(f"    No valid ENP/F1 data for {cancer_type}")
-        return None
-    
-    print(f"    Plotting {len(cancer_samples)} samples with valid ENP and F1 for {cancer_type}")
-    
-    # Get unique mutation burdens for grouping
-    mutation_burdens = sorted(cancer_samples['num_muts_condition'].unique())
-    min_muts = min(mutation_burdens)
-    max_muts = max(mutation_burdens)
-    
-    # Helper function to darken color based on mutation burden
-    def darken_color(hex_color, mutation_burden):
-        """Darken a hex color based on mutation burden (higher = darker)"""
-        # Convert hex to RGB
-        hex_color = hex_color.lstrip('#')
-        r, g, b = tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
-        
-        # Calculate darkness factor (0.6 for min, 1.0 for max)
-        if max_muts == min_muts:
-            factor = 1.0
-        else:
-            factor = 0.6 + 0.4 * (mutation_burden - min_muts) / (max_muts - min_muts)
-        
-        # Apply darkening
-        r = int(r * factor)
-        g = int(g * factor)
-        b = int(b * factor)
-        
-        return f'#{r:02x}{g:02x}{b:02x}'
-    
-    # Create scatter plot
-    fig = go.Figure()
-    
-    method_symbols = get_method_symbols()
-    
-    # First pass: add traces for each tool (grouped by tool, colored by mutation burden)
-    for tool in tools:
-        tool_data = cancer_samples[cancer_samples['tool'] == tool]
-        if len(tool_data) == 0:
-            continue
-        
-        # Get base method to determine symbol
-        base_method = get_tool_base_method(tool)
-        symbol = method_symbols.get(base_method, 'circle')
-        
-        # Group by mutation burden for coloring and filtering
-        for idx, num_muts in enumerate(mutation_burdens):
-            muts_data = tool_data[tool_data['num_muts_condition'] == num_muts]
-            if len(muts_data) == 0:
-                continue
-            
-            # Add slight jitter to show overlapping points
-            jitter_amount = 0.005  # Small jitter on F1 axis
-            jittered_f1 = muts_data['F1'].values + np.random.uniform(-jitter_amount, jitter_amount, len(muts_data))
-            
-            # Get darkened color based on mutation burden
-            point_color = darken_color(colors.get(tool, '#999999'), num_muts)
-            
-            fig.add_trace(go.Scatter(
-                x=muts_data['ENP'],
-                y=jittered_f1,
-                mode='markers',
-                name=tool,
-                legendgroup=tool,
-                legendgrouptitle_text='Tools' if tool == tools[0] else None,
-                showlegend=(idx == 0),  # Only show legend entry once per tool
-                marker=dict(
-                    color=point_color,
-                    size=10,
-                    symbol=symbol,
-                    opacity=0.7,
-                    line=dict(width=1, color='white')
-                ),
-                customdata=[[num_muts, 'tool']] * len(muts_data),  # Mark as tool trace
-                text=[f"Tool: {tool}<br>Sample: {row['sample']}<br>Muts: {num_muts}<br>Realization: {row.get('realization', 'N/A')}<br>highest_ENP: {row.get('highest_ENP', row.get('ENP', 'N/A')):.2f}<br>F1: {row['F1']:.3f}" 
-                      for _, row in muts_data.iterrows()],
-                hovertemplate='%{text}<extra></extra>'
-            ))
-    
-    # Second pass: add invisible traces for mutation burden filtering
-    for num_muts in mutation_burdens:
-        fig.add_trace(go.Scatter(
-            x=[None],
-            y=[None],
-            mode='markers',
-            name=f"{num_muts} muts",
-            legendgroup='mutations',
-            legendgrouptitle_text='Mutation Burden' if num_muts == mutation_burdens[0] else None,
-            showlegend=True,
-            marker=dict(
-                size=10,
-                color='rgba(128,128,128,0.5)',
-                line=dict(width=1, color='gray')
-            ),
-            customdata=[[num_muts, 'filter']],  # Mark as filter trace
-            visible=True
-        ))
-    
-    fig.update_layout(
-        title=dict(
-            text=f'Effective Number of Parties vs F1 Score<br><sub>{cancer_type}</sub>',
-            font=dict(size=16)
-        ),
-        xaxis=dict(
-            title='ENP (Effective Number of Parties)',
-            gridcolor='#eee',
-            showline=True,
-            linewidth=1,
-            linecolor='#ddd'
-        ),
-        yaxis=dict(
-            title='F1 Score',
-            gridcolor='#eee',
-            showline=True,
-            linewidth=1,
-            linecolor='#ddd',
-            range=[0, 1.05]
-        ),
-        plot_bgcolor='white',
-        hovermode='closest',
-        showlegend=True,
-        legend=dict(
-            x=1.02,
-            y=1,
-            xanchor='left',
-            yanchor='top',
-            bgcolor='rgba(255,255,255,0.8)',
-            bordercolor='#ddd',
-            borderwidth=1
-        ),
-        height=500,
-        margin=dict(l=80, r=150, t=80, b=60)
-    )
-    
-    return fig
-
-
-def create_enp_vs_tae_plot(df_per_sample, cancer_type, tools, colors):
-    """Create scatter plot of ENP vs TAE for unknown signature scenarios.
-    
-    Args:
-        df_per_sample: DataFrame with per-sample metrics including TAE and ENP
-        cancer_type: Cancer type to plot
-        tools: List of tools to include
-        colors: Dictionary mapping tools to colors
-    
-    Returns:
-        plotly.graph_objects.Figure or None if no data
-    """
-    if df_per_sample is None:
-        return None
-    
-    # Check if ENP and TAE columns exist
-    if 'ENP' not in df_per_sample.columns or 'TAE' not in df_per_sample.columns:
-        print(f"  Warning: ENP or TAE column not found in per-sample data")
-        return None
-    
-    # Filter for this cancer type
-    cancer_samples = df_per_sample[df_per_sample['cancer_type'] == cancer_type].copy()
-    
-    if len(cancer_samples) == 0:
-        return None
-    
-    # Remove rows with NaN ENP or TAE
-    cancer_samples = cancer_samples.dropna(subset=['ENP', 'TAE'])
-    
-    if len(cancer_samples) == 0:
-        print(f"    No valid ENP/TAE data for {cancer_type}")
-        return None
-    
-    print(f"    Plotting {len(cancer_samples)} samples with valid ENP and TAE for {cancer_type}")
-    
-    # Get unique mutation burdens for grouping
-    mutation_burdens = sorted(cancer_samples['num_muts_condition'].unique())
-    min_muts = min(mutation_burdens)
-    max_muts = max(mutation_burdens)
-    
-    # Helper function to darken color based on mutation burden
-    def darken_color(hex_color, mutation_burden):
-        """Darken a hex color based on mutation burden (higher = darker)"""
-        # Convert hex to RGB
-        hex_color = hex_color.lstrip('#')
-        r, g, b = tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
-        
-        # Calculate darkness factor (0.6 for min, 1.0 for max)
-        if max_muts == min_muts:
-            factor = 1.0
-        else:
-            factor = 0.6 + 0.4 * (mutation_burden - min_muts) / (max_muts - min_muts)
-        
-        # Apply darkening
-        r = int(r * factor)
-        g = int(g * factor)
-        b = int(b * factor)
-        
-        return f'#{r:02x}{g:02x}{b:02x}'
-    
-    # Create scatter plot
-    fig = go.Figure()
-    
-    method_symbols = get_method_symbols()
-    
-    # First pass: add traces for each tool (grouped by tool, colored by mutation burden)
-    for tool in tools:
-        tool_data = cancer_samples[cancer_samples['tool'] == tool]
-        if len(tool_data) == 0:
-            continue
-        
-        # Get base method to determine symbol
-        base_method = get_tool_base_method(tool)
-        symbol = method_symbols.get(base_method, 'circle')
-        
-        # Group by mutation burden for coloring and filtering
-        for idx, num_muts in enumerate(mutation_burdens):
-            muts_data = tool_data[tool_data['num_muts_condition'] == num_muts]
-            if len(muts_data) == 0:
-                continue
-            
-            # Add slight jitter to show overlapping points
-            jitter_amount = 0.002  # Small jitter on TAE axis
-            jittered_tae = muts_data['TAE'].values + np.random.uniform(-jitter_amount, jitter_amount, len(muts_data))
-            
-            # Get darkened color based on mutation burden
-            point_color = darken_color(colors.get(tool, '#999999'), num_muts)
-            
-            fig.add_trace(go.Scatter(
-                x=muts_data['ENP'],
-                y=jittered_tae,
-                mode='markers',
-                name=tool,
-                legendgroup=tool,
-                legendgrouptitle_text='Tools' if tool == tools[0] else None,
-                showlegend=(idx == 0),  # Only show legend entry once per tool
-                marker=dict(
-                    color=point_color,
-                    size=10,
-                    symbol=symbol,
-                    opacity=0.7,
-                    line=dict(width=1, color='white')
-                ),
-                customdata=[[num_muts, 'tool']] * len(muts_data),  # Mark as tool trace
-                text=[f"Tool: {tool}<br>Sample: {row['sample']}<br>Muts: {num_muts}<br>Realization: {row.get('realization', 'N/A')}<br>highest_ENP: {row.get('highest_ENP', row.get('ENP', 'N/A')):.2f}<br>TAE: {row['TAE']:.4f}" 
-                      for _, row in muts_data.iterrows()],
-                hovertemplate='%{text}<extra></extra>'
-            ))
-    
-    # Second pass: add invisible traces for mutation burden filtering
-    for num_muts in mutation_burdens:
-        fig.add_trace(go.Scatter(
-            x=[None],
-            y=[None],
-            mode='markers',
-            name=f"{num_muts} muts",
-            legendgroup='mutations',
-            legendgrouptitle_text='Mutation Burden' if num_muts == mutation_burdens[0] else None,
-            showlegend=True,
-            marker=dict(
-                size=10,
-                color='rgba(128,128,128,0.5)',
-                line=dict(width=1, color='gray')
-            ),
-            customdata=[[num_muts, 'filter']],  # Mark as filter trace
-            visible=True
-        ))
-    
-    fig.update_layout(
-        title=dict(
-            text=f'Effective Number of Parties vs Total Absolute Error<br><sub>{cancer_type}</sub>',
-            font=dict(size=16)
-        ),
-        xaxis=dict(
-            title='ENP (Effective Number of Parties)',
-            gridcolor='#eee',
-            showline=True,
-            linewidth=1,
-            linecolor='#ddd'
-        ),
-        yaxis=dict(
-            title='TAE (Total Absolute Error)',
-            gridcolor='#eee',
-            showline=True,
-            linewidth=1,
-            linecolor='#ddd'
-        ),
-        plot_bgcolor='white',
-        hovermode='closest',
-        showlegend=True,
-        legend=dict(
-            x=1.02,
-            y=1,
-            xanchor='left',
-            yanchor='top',
-            bgcolor='rgba(255,255,255,0.8)',
-            bordercolor='#ddd',
-            borderwidth=1
-        ),
-        height=500,
-        margin=dict(l=80, r=150, t=80, b=60)
-    )
-    
-    return fig
-
-
-def create_interactive_group_comparison_html(df_per_sample, cancer_type, tools, colors):
-    """
-    Create HTML/JavaScript for interactive group comparison tool.
-    Allows filtering by: mutation burden, ENP of flattest known signature,
-    ENP of flattest unknown signature.
-    """
-    import json
-
-    if df_per_sample is None:
-        return ""
-
-    cancer_samples = df_per_sample[df_per_sample['cancer_type'] == cancer_type].copy()
-    if len(cancer_samples) == 0:
-        return ""
-
-    available_metrics = [m for m in ['F1', 'TAE', 'MCC', 'nRMSE', 'num_FP', 'num_FN', 'P', 'R']
-                         if m in cancer_samples.columns]
-    if not available_metrics:
-        return ""
-
-    mutation_burdens = sorted(cancer_samples['num_muts'].unique())
-
-    has_enp_known    = 'highest_ENP_known'    in cancer_samples.columns
-    has_enp_unknown  = 'highest_ENP_unknown'  in cancer_samples.columns
-
-    def _range(col):
-        valid = cancer_samples[col].dropna()
-        if len(valid) == 0:
-            return (0.0, 0.0)
-        return (float(valid.min()), float(valid.max()))
-
-    enp_known_range   = _range('highest_ENP_known')   if has_enp_known   else (0.0, 0.0)
-    enp_unknown_range = _range('highest_ENP_unknown') if has_enp_unknown else (0.0, 0.0)
-
-    # Performance metric filters
-    perf_filter_cols = [('F1', 'F1 Score'), ('TAE', 'TAE'), ('MCC', 'MCC'),
-                        ('P', 'Precision'), ('R', 'Recall'), ('nRMSE', 'nRMSE')]
-    perf_filters = [(col, label, _range(col))
-                    for col, label in perf_filter_cols if col in cancer_samples.columns]
-
-    plot_id = cancer_type.replace('-', '_') + '_interactive'
-
-    columns_to_include = ['sample', 'tool', 'num_muts'] + available_metrics
-    for col in ['highest_ENP_known', 'highest_ENP_unknown']:
-        if col in cancer_samples.columns:
-            columns_to_include.append(col)
-
-    data_dict = {
-        'samples': cancer_samples[columns_to_include].where(
-            cancer_samples[columns_to_include].notna(), other=None
-        ).to_dict('records'),
-        'tools': tools,
-        'colors': colors,
-        'metrics': available_metrics,
-        'mutation_burdens': [int(m) for m in mutation_burdens],
-        'has_enp_known':   has_enp_known,
-        'has_enp_unknown': has_enp_unknown,
-        'enp_known_range':   list(enp_known_range),
-        'enp_unknown_range': list(enp_unknown_range),
-        'perf_filters': {col: {'label': label, 'range': list(rng)}
-                         for col, label, rng in perf_filters},
-    }
-    data_json = json.dumps(data_dict)
-
-    def build_filter_html(group_letter, group_color):
-        html_f = f"""
-        <div style="background: white; padding: 1rem; border-radius: 4px; border: 2px solid {group_color};">
-            <h5 style="margin-top: 0; color: {group_color};">Group {group_letter}</h5>
-
-            <div style="margin-bottom: 0.8rem;">
-                <label style="display: block; margin-bottom: 0.3rem; font-weight: 500;">Mutation Burden:</label>
-                <select id="{plot_id}_group{group_letter}_burden"
-                        style="width: 100%; padding: 0.4rem; border: 1px solid #ddd; border-radius: 4px;">
-                    {''.join(f'<option value="{int(m)}">{int(m):,} mutations</option>' for m in mutation_burdens)}
-                </select>
-            </div>
-        """
-
-        if has_enp_known:
-            lo, hi = enp_known_range
-            html_f += f"""
-            <div style="margin-bottom: 0.8rem;">
-                <label style="display: block; margin-bottom: 0.3rem; font-weight: 500;">
-                    ENP Known — flattest known signature ({lo:.1f} – {hi:.1f}):
-                </label>
-                <div style="display: flex; gap: 0.5rem; align-items: center;">
-                    <input type="number" id="{plot_id}_group{group_letter}_enp_known_min" placeholder="Min"
-                           style="width: 45%; padding: 0.4rem; border: 1px solid #ddd; border-radius: 4px;"
-                           step="0.1" min="{lo:.1f}" max="{hi:.1f}">
-                    <span style="font-size: 0.9em;">to</span>
-                    <input type="number" id="{plot_id}_group{group_letter}_enp_known_max" placeholder="Max"
-                           style="width: 45%; padding: 0.4rem; border: 1px solid #ddd; border-radius: 4px;"
-                           step="0.1" min="{lo:.1f}" max="{hi:.1f}">
-                </div>
-            </div>
-            """
-
-        if has_enp_unknown:
-            lo, hi = enp_unknown_range
-            html_f += f"""
-            <div style="margin-bottom: 0.8rem;">
-                <label style="display: block; margin-bottom: 0.3rem; font-weight: 500;">
-                    ENP Unknown — flattest unknown signature ({lo:.1f} – {hi:.1f}):
-                </label>
-                <div style="display: flex; gap: 0.5rem; align-items: center;">
-                    <input type="number" id="{plot_id}_group{group_letter}_enp_unknown_min" placeholder="Min"
-                           style="width: 45%; padding: 0.4rem; border: 1px solid #ddd; border-radius: 4px;"
-                           step="0.1" min="{lo:.1f}" max="{hi:.1f}">
-                    <span style="font-size: 0.9em;">to</span>
-                    <input type="number" id="{plot_id}_group{group_letter}_enp_unknown_max" placeholder="Max"
-                           style="width: 45%; padding: 0.4rem; border: 1px solid #ddd; border-radius: 4px;"
-                           step="0.1" min="{lo:.1f}" max="{hi:.1f}">
-                </div>
-            </div>
-            """
-
-        for col, label, (lo, hi) in perf_filters:
-            step = "0.001" if hi <= 1.0 else "0.01"
-            html_f += f"""
-            <div style="margin-bottom: 0.8rem;">
-                <label style="display: block; margin-bottom: 0.3rem; font-weight: 500;">
-                    {label} ({lo:.3f} – {hi:.3f}):
-                </label>
-                <div style="display: flex; gap: 0.5rem; align-items: center;">
-                    <input type="number" id="{plot_id}_group{group_letter}_perf_{col}_min" placeholder="Min"
-                           style="width: 45%; padding: 0.4rem; border: 1px solid #ddd; border-radius: 4px;"
-                           step="{step}" min="{lo:.3f}" max="{hi:.3f}">
-                    <span style="font-size: 0.9em;">to</span>
-                    <input type="number" id="{plot_id}_group{group_letter}_perf_{col}_max" placeholder="Max"
-                           style="width: 45%; padding: 0.4rem; border: 1px solid #ddd; border-radius: 4px;"
-                           step="{step}" min="{lo:.3f}" max="{hi:.3f}">
-                </div>
-            </div>
-            """
-
-        html_f += f"""
-            <div style="font-size: 0.9em; color: #666; margin-top: 0.8rem; padding: 0.5rem; background: #f9f9f9; border-radius: 4px;">
-                <span id="{plot_id}_group{group_letter}_count" style="font-weight: 600;">0 samples selected</span>
-            </div>
-        </div>
-        """
-        return html_f
-
-    html = f"""
-<div style="margin: 2rem 0; padding: 1.5rem; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
-    <h4 style="margin-top: 0; color: white; text-shadow: 1px 1px 2px rgba(0,0,0,0.2);">
-        Interactive Signature Complexity Analysis
-    </h4>
-    <p style="color: rgba(255,255,255,0.95); margin-bottom: 1.5rem; font-size: 0.95em;">
-        Compare tool performance across two sample groups defined by mutation burden and signature complexity
-        (ENP = Effective Number of Parties — higher means a flatter, harder-to-attribute spectrum).
-    </p>
-
-    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin-bottom: 1.5rem;">
-        {build_filter_html('A', '#4CAF50')}
-        {build_filter_html('B', '#FF9800')}
-    </div>
-
-    <div style="background: white; padding: 1rem; border-radius: 4px; margin-bottom: 1rem; display: flex; align-items: center; gap: 1rem; flex-wrap: wrap;">
-        <div style="flex: 1; min-width: 200px;">
-            <label style="display: block; margin-bottom: 0.3rem; font-weight: 500; color: #333;">Metric to Compare:</label>
-            <select id="{plot_id}_metric" style="width: 100%; padding: 0.5rem; border: 1px solid #ddd; border-radius: 4px; font-size: 1em;">
-                {''.join(f'<option value="{m}">{m}</option>' for m in available_metrics)}
-            </select>
-        </div>
-        <div style="display: flex; align-items: flex-end;">
-            <button onclick="updateComparison_{plot_id}()"
-                    style="padding: 0.7rem 2rem; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 600; font-size: 1em; box-shadow: 0 2px 4px rgba(0,0,0,0.2);">
-                Update Comparison
-            </button>
-        </div>
-    </div>
-
-    <div style="background: white; padding: 1rem; border-radius: 4px;">
-        <div id="{plot_id}_plot" style="width: 100%; height: 500px;"></div>
-    </div>
-
-    <div style="margin-top: 1rem; padding: 1rem; background: rgba(255,255,255,0.1); border-radius: 4px; color: rgba(255,255,255,0.9); font-size: 0.85em;">
-        <strong>Tip:</strong> Compare samples where the flattest known signature has high vs low ENP to see
-        whether diffuse reference signatures hurt fitting accuracy. Use ENP Unknown to assess how the
-        difficulty of the hidden signal affects tool performance.
-    </div>
-</div>
-
-<script>
-(function() {{
-    var plotData = {data_json};
-    var plotId = '{plot_id}';
-
-    function getGroupFilters(group) {{
-        var filters = {{}};
-        filters.burden = parseInt(document.getElementById(plotId + '_group' + group + '_burden').value);
-
-        if (plotData.has_enp_known) {{
-            var el_min = document.getElementById(plotId + '_group' + group + '_enp_known_min');
-            var el_max = document.getElementById(plotId + '_group' + group + '_enp_known_max');
-            filters.enp_known_min = el_min && el_min.value !== '' ? parseFloat(el_min.value) : null;
-            filters.enp_known_max = el_max && el_max.value !== '' ? parseFloat(el_max.value) : null;
-        }}
-
-        if (plotData.has_enp_unknown) {{
-            var el_min = document.getElementById(plotId + '_group' + group + '_enp_unknown_min');
-            var el_max = document.getElementById(plotId + '_group' + group + '_enp_unknown_max');
-            filters.enp_unknown_min = el_min && el_min.value !== '' ? parseFloat(el_min.value) : null;
-            filters.enp_unknown_max = el_max && el_max.value !== '' ? parseFloat(el_max.value) : null;
-        }}
-
-        filters.perf = {{}};
-        Object.keys(plotData.perf_filters).forEach(function(col) {{
-            var el_min = document.getElementById(plotId + '_group' + group + '_perf_' + col + '_min');
-            var el_max = document.getElementById(plotId + '_group' + group + '_perf_' + col + '_max');
-            filters.perf[col] = {{
-                min: el_min && el_min.value !== '' ? parseFloat(el_min.value) : null,
-                max: el_max && el_max.value !== '' ? parseFloat(el_max.value) : null
-            }};
-        }});
-
-        return filters;
-    }}
-
-    function filterSamples(filters) {{
-        return plotData.samples.filter(function(s) {{
-            if (s.num_muts !== filters.burden) return false;
-
-            if (filters.enp_known_min !== null && !isNaN(filters.enp_known_min)) {{
-                if (s.highest_ENP_known === null || s.highest_ENP_known < filters.enp_known_min) return false;
-            }}
-            if (filters.enp_known_max !== null && !isNaN(filters.enp_known_max)) {{
-                if (s.highest_ENP_known === null || s.highest_ENP_known > filters.enp_known_max) return false;
-            }}
-
-            if (filters.enp_unknown_min !== null && !isNaN(filters.enp_unknown_min)) {{
-                if (s.highest_ENP_unknown === null || s.highest_ENP_unknown < filters.enp_unknown_min) return false;
-            }}
-            if (filters.enp_unknown_max !== null && !isNaN(filters.enp_unknown_max)) {{
-                if (s.highest_ENP_unknown === null || s.highest_ENP_unknown > filters.enp_unknown_max) return false;
-            }}
-
-            var perf = filters.perf || {{}};
-            for (var col in perf) {{
-                var pf = perf[col];
-                var val = s[col];
-                if (pf.min !== null && !isNaN(pf.min) && (val === null || val === undefined || val < pf.min)) return false;
-                if (pf.max !== null && !isNaN(pf.max) && (val === null || val === undefined || val > pf.max)) return false;
-            }}
-
-            return true;
-        }});
-    }}
-
-    function updateComparison_{plot_id}() {{
-        var filtersA = getGroupFilters('A');
-        var filtersB = getGroupFilters('B');
-        var metric = document.getElementById(plotId + '_metric').value;
-
-        var groupA_samples = filterSamples(filtersA);
-        var groupB_samples = filterSamples(filtersB);
-
-        var uniqueSamplesA = new Set(groupA_samples.map(function(s) {{ return s.sample; }})).size;
-        var uniqueSamplesB = new Set(groupB_samples.map(function(s) {{ return s.sample; }})).size;
-        document.getElementById(plotId + '_groupA_count').textContent =
-            uniqueSamplesA + ' samples (' + groupA_samples.length + ' data points)';
-        document.getElementById(plotId + '_groupB_count').textContent =
-            uniqueSamplesB + ' samples (' + groupB_samples.length + ' data points)';
-
-        var traces = [];
-        plotData.tools.forEach(function(tool) {{
-            var dataA = groupA_samples.filter(function(s) {{ return s.tool === tool; }})
-                .map(function(s) {{ return s[metric]; }})
-                .filter(function(v) {{ return v !== null && v !== undefined && !isNaN(v); }});
-            if (dataA.length > 0) {{
-                traces.push({{
-                    y: dataA, name: tool, type: 'box',
-                    marker: {{ color: plotData.colors[tool] || '#888' }},
-                    boxmean: 'sd', offsetgroup: tool, legendgroup: tool,
-                    showlegend: true, xaxis: 'x1'
-                }});
-            }}
-
-            var dataB = groupB_samples.filter(function(s) {{ return s.tool === tool; }})
-                .map(function(s) {{ return s[metric]; }})
-                .filter(function(v) {{ return v !== null && v !== undefined && !isNaN(v); }});
-            if (dataB.length > 0) {{
-                traces.push({{
-                    y: dataB, name: tool, type: 'box',
-                    marker: {{ color: plotData.colors[tool] || '#888' }},
-                    boxmean: 'sd', offsetgroup: tool, legendgroup: tool,
-                    showlegend: false, xaxis: 'x2'
-                }});
-            }}
-        }});
-
-        var layout = {{
-            title: {{ text: 'Group Comparison: ' + metric, font: {{ size: 16 }} }},
-            xaxis:  {{ domain: [0, 0.45], title: {{ text: 'Group A', font: {{ color: '#4CAF50' }} }}, showticklabels: false }},
-            xaxis2: {{ domain: [0.55, 1], title: {{ text: 'Group B', font: {{ color: '#FF9800' }} }}, showticklabels: false }},
-            yaxis: {{ title: {{ text: metric }}, zeroline: true }},
-            boxmode: 'group', showlegend: true,
-            legend: {{ orientation: 'h', x: 0.5, xanchor: 'center', y: -0.15 }},
-            hovermode: 'closest',
-            margin: {{ t: 60, b: 80, l: 60, r: 40 }}
-        }};
-
-        Plotly.newPlot(plotId + '_plot', traces, layout, {{responsive: true}});
-    }}
-
-    var allInputs = [
-        plotId + '_groupA_burden', plotId + '_groupB_burden',
-        plotId + '_groupA_enp_known_min',    plotId + '_groupA_enp_known_max',
-        plotId + '_groupB_enp_known_min',    plotId + '_groupB_enp_known_max',
-        plotId + '_groupA_enp_unknown_min',  plotId + '_groupA_enp_unknown_max',
-        plotId + '_groupB_enp_unknown_min',  plotId + '_groupB_enp_unknown_max',
-        plotId + '_metric'
-    ];
-    Object.keys(plotData.perf_filters).forEach(function(col) {{
-        ['A', 'B'].forEach(function(g) {{
-            allInputs.push(plotId + '_group' + g + '_perf_' + col + '_min');
-            allInputs.push(plotId + '_group' + g + '_perf_' + col + '_max');
-        }});
-    }});
-    allInputs.forEach(function(id) {{
-        var elem = document.getElementById(id);
-        if (elem) elem.addEventListener('change', updateComparison_{plot_id});
-    }});
-
-    setTimeout(updateComparison_{plot_id}, 100);
-}})();
-</script>
-"""
-    
-    return html
-
-
-def create_feature_metric_scatter_widget(
-        features_tsv_path: str,
-        per_sample_metrics_tsv: str,
-        widget_id: str = 'feature_metric_widget',
-        data_df=None,
-        data_json: str = None,
-        colors: dict = None
-) -> str:
-    """Return HTML + JS for interactive boxplot: feature binned low/high vs metric distribution.
-
-    Args:
-        features_tsv_path: path to TSV file with scalar features per sample (DEPRECATED if data_df provided)
-        per_sample_metrics_tsv: path to TSV with per-sample metrics (DEPRECATED if data_df provided)
-        widget_id: unique DOM id prefix for this widget
-        data_df: pandas DataFrame with all data (preferred over file paths to avoid CORS issues)
-        data_json: pre-serialized {header, rows} JSON string; if given, skips serializing data_df again
-            (callers embedding this widget once per tab should serialize the shared data once and reuse it)
-        colors: tool -> hex color mapping, e.g. from get_tool_colors(); falls back to gray if omitted
-
-    The function produces a small interactive UI where the user selects:
-        - feature (to bin into low/high)
-        - metric (Y-axis for boxplot)
-        - mutation burden filter
-
-    Shows separate boxplots for each tool, split by low vs high feature values.
-    Output: HTML string to embed in report.
-    """
-    html = f"""
-<div style="background: white; padding: 1.5rem; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); margin: 1rem 0;">
-    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1rem; margin-bottom: 1.5rem;">
-        <div>
-            <label style="display: block; font-weight: 600; color: #374151; margin-bottom: 0.5rem;">
-                📊 Feature (binned Low/High)
-            </label>
-            <select id="{widget_id}_feature" style="width: 100%; padding: 0.5rem; border: 2px solid #e5e7eb; border-radius: 6px; font-size: 14px; background: white; cursor: pointer;">
-                <option value="">Select feature...</option>
-            </select>
-        </div>
-        <div>
-            <label style="display: block; font-weight: 600; color: #374151; margin-bottom: 0.5rem;">
-                📈 Metric (distribution)
-            </label>
-            <select id="{widget_id}_metric" style="width: 100%; padding: 0.5rem; border: 2px solid #e5e7eb; border-radius: 6px; font-size: 14px; background: white; cursor: pointer;">
-                <option value="">Select metric...</option>
-            </select>
-        </div>
-        <div>
-            <label style="display: block; font-weight: 600; color: #374151; margin-bottom: 0.5rem;">
-                🧬 Mutation Burden
-            </label>
-            <select id="{widget_id}_muts" style="width: 100%; padding: 0.5rem; border: 2px solid #e5e7eb; border-radius: 6px; font-size: 14px; background: white; cursor: pointer;">
-                <option value="">All</option>
-            </select>
-        </div>
-    </div>
-
-    <div style="text-align: center; margin-bottom: 1rem;">
-        <button id="{widget_id}_update" style="
-            background: linear-gradient(135deg, #7c3aed 0%, #5b21b6 100%);
-            color: white;
-            border: none;
-            padding: 0.75rem 2rem;
-            border-radius: 8px;
-            font-size: 16px;
-            font-weight: 600;
-            cursor: pointer;
-            box-shadow: 0 4px 6px rgba(124, 58, 237, 0.3);
-            transition: all 0.3s ease;
-        " onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='0 6px 12px rgba(124, 58, 237, 0.4)';"
-           onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 4px 6px rgba(124, 58, 237, 0.3)';">
-            🎯 Update Plot
-        </button>
-    </div>
-
-    <div id="{widget_id}_plot" style="width: 100%; height: 600px; border: 2px solid #f3f4f6; border-radius: 8px; background: #fafafa;"></div>
-
-    <div id="{widget_id}_stats" style="margin-top: 1rem; padding: 1rem; background: #f9fafb; border-radius: 6px; display: none;">
-        <div style="display: flex; justify-content: center; align-items: center; gap: 2rem; font-size: 14px;">
-            <div>
-                <span style="color: #6b7280;">Median threshold:</span>
-                <strong id="{widget_id}_threshold" style="color: #111827; margin-left: 0.5rem;">-</strong>
-            </div>
-            <div>
-                <span style="color: #6b7280;">N (Low):</span>
-                <strong id="{widget_id}_n_low" style="color: #111827; margin-left: 0.5rem;">-</strong>
-            </div>
-            <div>
-                <span style="color: #6b7280;">N (High):</span>
-                <strong id="{widget_id}_n_high" style="color: #111827; margin-left: 0.5rem;">-</strong>
-            </div>
-        </div>
-    </div>
-</div>
-
-<script>
-(function() {{
-    const widgetId = '{widget_id}';
-
-    // Feature columns (complexity features)
-    const featureCols = ['highest_ENP_known', 'highest_ENP_unknown'];
-
-    // Metric columns (performance metrics)
-    const metricCols = ['TAE', 'F1', 'MCC', 'P', 'R', 'theoretical_min_TAE'];
-
-    // Metadata columns
-    const metadataCols = ['data_type', 'cancer_type', 'num_muts_condition', 'relevance',
-                          'tool', 'realization', 'sample', 'num_muts'];
-
-    // Embedded data (avoids CORS issues with file:// protocol)
-    const embeddedData = __DATA__;
-
-    const features = embeddedData;
-    const metrics = embeddedData;  // Same data source
-
-    // Build feature list (only feature columns)
-    const featureSelect = document.getElementById(widgetId + '_feature');
-
-    features.header.forEach(h => {{
-        if (featureCols.includes(h)) {{
-            const opt = document.createElement('option');
-            opt.value = h;
-            opt.text = h;
-            featureSelect.appendChild(opt);
-        }}
-    }});
-
-    // Build metric list (only metric columns)
-    const metricSelect = document.getElementById(widgetId + '_metric');
-
-    metrics.header.forEach(h => {{
-        if (metricCols.includes(h)) {{
-            const opt = document.createElement('option');
-            opt.value = h;
-                opt.text = h;
-                metricSelect.appendChild(opt);
-            }}
-        }});
-
-        // Build mutation burdens list
-        const toolIdx = metrics.header.indexOf('tool');
-        const mutsIdx = metrics.header.indexOf('num_muts');
-        const muts = new Set();
-        if (mutsIdx >= 0) {{
-            metrics.rows.forEach(r => {{
-                if (r[mutsIdx]) muts.add(r[mutsIdx]);
-            }});
-        }}
-        const mutsSelect = document.getElementById(widgetId + '_muts');
-        Array.from(muts).sort((a,b)=>+a-+b).forEach(m => {{
-            const opt = document.createElement('option');
-            opt.value = m;
-            opt.text = m;
-            mutsSelect.appendChild(opt);
-        }});
-
-        // Build data structure for plotting
-        const sampleIdx = metrics.header.indexOf('sample');
-        const dataByToolMuts = new Map(); // tool_muts -> array of {{feature_vals, metric_vals, sample}}
-
-        metrics.rows.forEach((row, idx) => {{
-            const sample = row[sampleIdx];
-            const tool = toolIdx >= 0 ? row[toolIdx] : '';
-            const numMuts = mutsIdx >= 0 ? row[mutsIdx] : '';
-            const key = tool + '_' + numMuts;
-
-            // Get feature values for this row
-            const featureVals = {{}};
-            features.header.forEach((h, i) => {{
-                if (featureCols.includes(h)) {{
-                    featureVals[h] = row[i];  // Same row if same file
-                }}
-            }});
-
-            // Get metric values for this row
-            const metricVals = {{}};
-            metrics.header.forEach((h, i) => {{
-                if (metricCols.includes(h)) {{
-                    metricVals[h] = row[i];
-                }}
-            }});
-
-            if (!dataByToolMuts.has(key)) {{
-                dataByToolMuts.set(key, []);
-            }}
-            dataByToolMuts.get(key).push({{
-                sample,
-                tool,
-                numMuts,
-                features: featureVals,
-                metrics: metricVals
-            }});
-        }});
-
-        function updatePlot() {{
-            const feat = featureSelect.value;
-            const metric = metricSelect.value;
-
-            if (!feat || !metric) {{
-                document.getElementById('{widget_id}_plot').innerHTML =
-                    '<div style="display:flex; align-items:center; justify-content:center; height:100%; color:#9ca3af; font-size:18px;">📊 Select a feature and metric to visualize</div>';
-                return;
-            }}
-
-            const selectedMuts = mutsSelect.value;
-
-            // Collect all data points with feature and metric values
-            const allData = [];
-
-            dataByToolMuts.forEach((dataPoints, key) => {{
-                dataPoints.forEach(point => {{
-                    const numMuts = point.numMuts;
-
-                    // Filter by selected mutation burden
-                    if (selectedMuts && numMuts !== selectedMuts) return;
-
-                    // Get feature and metric values
-                    const featureVal = parseFloat(point.features[feat]);
-                    const metricVal = parseFloat(point.metrics[metric]);
-
-                    // Skip if invalid
-                    if (isNaN(featureVal) || isNaN(metricVal)) return;
-
-                    allData.push({{
-                        tool: point.tool,
-                        feature: featureVal,
-                        metric: metricVal,
-                        sample: point.sample,
-                        numMuts: numMuts
-                    }});
-                }});
-            }});
-
-            if (allData.length === 0) {{
-                document.getElementById('{widget_id}_plot').innerHTML =
-                    '<div style="display:flex; align-items:center; justify-content:center; height:100%; color:#ef4444; font-size:16px;">❌ No data available for selected options</div>';
-                return;
-            }}
-
-            // Calculate median threshold for binning (proper median calculation)
-            const featureValues = allData.map(d => d.feature);
-            featureValues.sort((a,b) => a - b);
-            let medianThreshold;
-            if (featureValues.length % 2 === 0) {{
-                // Even number: average of two middle values
-                medianThreshold = (featureValues[featureValues.length/2 - 1] + featureValues[featureValues.length/2]) / 2;
-            }} else {{
-                // Odd number: middle value
-                medianThreshold = featureValues[Math.floor(featureValues.length / 2)];
-            }}
-
-            // Bin data into low/high by feature value (using < for high to handle ties at median)
-            const dataLow = allData.filter(d => d.feature < medianThreshold);
-            const dataHigh = allData.filter(d => d.feature >= medianThreshold);
-
-            // If all values are the same (or very skewed), split evenly to avoid empty groups
-            if (dataLow.length === 0 || dataHigh.length === 0) {{
-                allData.sort((a, b) => a.feature - b.feature);
-                const midPoint = Math.floor(allData.length / 2);
-                dataLow.length = 0;
-                dataHigh.length = 0;
-                dataLow.push(...allData.slice(0, midPoint));
-                dataHigh.push(...allData.slice(midPoint));
-            }}
-
-            // Group by tool for each bin
-            const tools = [...new Set(allData.map(d => d.tool))].sort();
-
-            // Tool colors - embedded from ReportMetadata.tool_colors (see get_tool_colors())
-            const toolColors = __TOOL_COLORS__;
-
-            // Create boxplot traces - separate trace for each tool, grouped by Low/High
-            const traces = [];
-
-            // For each tool, create a Low trace and a High trace
-            tools.forEach(tool => {{
-                const toolDataLow = dataLow.filter(d => d.tool === tool);
-                const toolDataHigh = dataHigh.filter(d => d.tool === tool);
-
-                // Low trace for this tool
-                if (toolDataLow.length > 0) {{
-                    traces.push({{
-                        y: toolDataLow.map(d => d.metric),
-                        x: Array(toolDataLow.length).fill(tool),
-                        name: 'Low',
-                        type: 'box',
-                        boxpoints: 'all',
-                        jitter: 0.3,
-                        pointpos: 0,
-                        marker: {{
-                            size: 4,
-                            opacity: 0.5,
-                            color: toolColors[tool] || '#6b7280'
-                        }},
-                        line: {{
-                            color: toolColors[tool] || '#6b7280',
-                            width: 2
-                        }},
-                        fillcolor: `rgba${{(toolColors[tool] || '#6b7280').replace('#','').match(/.{{2}}/g).map(x=>parseInt(x,16)).join(',')}},.3)`,
-                        text: toolDataLow.map(d => `Sample: ${{d.sample}}<br>${{feat}}: ${{d.feature.toFixed(3)}}<br>${{metric}}: ${{d.metric.toFixed(3)}}`),
-                        hovertemplate: `<b>${{tool}} - Low</b><br>%{{text}}<extra></extra>`,
-                        offsetgroup: 'Low',
-                        legendgroup: 'Low',
-                        showlegend: tool === tools[0]  // Only show legend for first tool
-                    }});
-                }}
-
-                // High trace for this tool
-                if (toolDataHigh.length > 0) {{
-                    traces.push({{
-                        y: toolDataHigh.map(d => d.metric),
-                        x: Array(toolDataHigh.length).fill(tool),
-                        name: 'High',
-                        type: 'box',
-                        boxpoints: 'all',
-                        jitter: 0.3,
-                        pointpos: 0,
-                        marker: {{
-                            size: 4,
-                            opacity: 0.6,
-                            color: toolColors[tool] || '#6b7280'
-                        }},
-                        line: {{
-                            color: toolColors[tool] || '#6b7280',
-                            width: 2
-                        }},
-                        fillcolor: `rgba${{(toolColors[tool] || '#6b7280').replace('#','').match(/.{{2}}/g).map(x=>parseInt(x,16)).join(',')}},.5)`,
-                        text: toolDataHigh.map(d => `Sample: ${{d.sample}}<br>${{feat}}: ${{d.feature.toFixed(3)}}<br>${{metric}}: ${{d.metric.toFixed(3)}}`),
-                        hovertemplate: `<b>${{tool}} - High</b><br>%{{text}}<extra></extra>`,
-                        offsetgroup: 'High',
-                        legendgroup: 'High',
-                        showlegend: tool === tools[0]  // Only show legend for first tool
-                    }});
-                }}
-            }});
-
-            // Get theoretical minimum TAE (if available and metric is TAE)
-            let theoreticalMinTAE = null;
-            if (metric === 'TAE' && allData.length > 0 && allData[0].metrics && 'theoretical_min_TAE' in allData[0].metrics) {{
-                theoreticalMinTAE = allData[0].metrics['theoretical_min_TAE'];
-            }}
-
-            // Add theoretical maximum line if applicable
-            if (theoreticalMinTAE !== null && theoreticalMinTAE > 0) {{
-                traces.push({{
-                    x: tools,
-                    y: Array(tools.length).fill(theoreticalMinTAE),
-                    name: 'Theoretical Best (Unknown Sigs)',
-                    type: 'scatter',
-                    mode: 'lines',
-                    line: {{
-                        color: '#ef4444',
-                        width: 2,
-                        dash: 'dash'
-                    }},
-                    showlegend: true,
-                    hovertemplate: `Theoretical Minimum TAE: ${{theoreticalMinTAE.toFixed(4)}}<br>(Due to unknown signatures)<extra></extra>`
-                }});
-            }}
-
-            const layout = {{
-                title: {{
-                    text: `<b>${{metric}}</b> distribution by <b>${{feat}}</b> (Low vs High)`,
-                    font: {{ size: 16, color: '#111827' }}
-                }},
-                xaxis: {{
-                    title: {{ text: 'Tool', font: {{ size: 13, color: '#374151' }} }},
-                    gridcolor: '#e5e7eb',
-                    categoryorder: 'array',
-                    categoryarray: tools
-                }},
-                yaxis: {{
-                    title: {{ text: metric, font: {{ size: 14, color: '#374151' }} }},
-                    gridcolor: '#e5e7eb',
-                    zeroline: true,
-                    zerolinecolor: '#9ca3af',
-                    zerolinewidth: 1
-                }},
-                showlegend: true,
-                legend: {{
-                    x: 1.02,
-                    y: 1,
-                    bgcolor: 'rgba(255,255,255,0.9)',
-                    bordercolor: '#e5e7eb',
-                    borderwidth: 1,
-                    title: {{ text: 'Group', font: {{ size: 12, color: '#374151' }} }}
-                }},
-                plot_bgcolor: 'white',
-                paper_bgcolor: '#fafafa',
-                margin: {{ l: 70, r: 120, t: 70, b: 90 }},
-                boxmode: 'group',
-                boxgap: 0.2,
-                boxgroupgap: 0.1
-            }};
-
-            Plotly.newPlot('{widget_id}_plot', traces, layout, {{responsive:true, displayModeBar: true}});
-
-            // Update stats
-            document.getElementById('{widget_id}_stats').style.display = 'block';
-            document.getElementById('{widget_id}_threshold').textContent = medianThreshold.toFixed(3);
-            document.getElementById('{widget_id}_n_low').textContent = dataLow.length;
-            document.getElementById('{widget_id}_n_high').textContent = dataHigh.length;
-        }}
-
-        document.getElementById('{widget_id}_update').addEventListener('click', updatePlot);
-
-        // Pre-select first options and auto-plot
-        if (featureSelect.options.length > 1) featureSelect.selectedIndex = 1;
-        if (metricSelect.options.length > 1) metricSelect.selectedIndex = 1;
-        if (mutsSelect.options.length) mutsSelect.selectedIndex = 0;
-
-        // Auto-update on load
-        setTimeout(updatePlot, 100);
-}})();
-</script>
-"""
-    # Prepare data for embedding (avoid CORS issues with file:// protocol)
-    import json
-
-    if data_json is None:
-        if data_df is not None:
-            # Use provided dataframe
-            df = data_df
-        else:
-            # Fallback to reading file (but this won't work with file:// protocol)
-            df = pd.read_csv(per_sample_metrics_tsv, sep='\t')
-
-        # Convert dataframe to {{header: [...], rows: [...]}} format for JavaScript
-        data_dict = {
-            'header': df.columns.tolist(),
-            'rows': df.astype(str).values.tolist()  # Convert all to strings for JSON
-        }
-        data_json = json.dumps(data_dict)
-
-    # Embed data and tool colors directly in JavaScript to avoid fetch/CORS issues
-    html = html.replace('__DATA__', data_json)
-    html = html.replace('__TOOL_COLORS__', json.dumps(colors or {}))
-
-    return html
-
-
 def build_signature_activity_data(results_dir, df, tools, colors, out_of_reference_sigs=None,
                                    relevance='standard', selected_rep=None, min_contribution=None):
     """Load per-sample ground-truth vs. predicted signature activities for the
     Signature Activity widget (see create_signature_activity_widget below).
 
     Reads two things straight off disk (these aren't in any aggregated dataframe
-    already loaded by the report). Both "realsim" and "custom" data types have
-    ground truth and use the same directory layout (just "custom" uses the dataset
-    name where "realsim" uses a cancer type), so both are included here:
-      - ground truth: results_dir/generated_data/{data_type}/weights_{cancer}-w_{rep}-{burden}.dat
+    already loaded by the report). Both "synth_realistic" and "synth_custom" data types have
+    ground truth and use the same directory layout (just "synth_custom" uses the dataset
+    name where "synth_realistic" uses a cancer type), so both are included here:
+      - ground truth: results_dir/runs/{data_type}/{cancer}/{burden}_mutations/samples/known_answer_rep{rep}.dat
         (signature fractions per sample; multiplied by burden to get mutation counts)
-      - predictions: results_dir/{data_type}/{cancer}/{relevance}/{burden}/rep_{rep}/{tool}_contribution.dat
+      - predictions: results_dir/runs/{data_type}/{cancer}/{burden}_mutations[_relevant]/fits/{tool}_rep{rep}.dat
 
     Predicted signatures below `min_contribution` mutations are dropped (not just those
     at exactly 0): the evaluation metrics (P/R/F1/MCC/FP/FN, via evaluate_tool_performance.py
@@ -4788,19 +2627,19 @@ def build_signature_activity_data(results_dir, df, tools, colors, out_of_referen
     the raw >0 cut — it's what was actually simulated, not a detection call.
 
     Returns a JSON string ready to embed client-side, or None if no ground-truth data
-    (realsim or custom) is available for this run (e.g. real-sample-only reports).
+    (synth_realistic or synth_custom) is available for this run (e.g. real-sample-only reports).
     """
     min_contribution = DEFAULT_MIN_CONTRIBUTION if min_contribution is None else min_contribution
     if not results_dir or df is None or df.empty:
         return None
 
-    gt_df = df[df['data_type'].isin(['realsim', 'custom'])] if 'data_type' in df.columns else df
+    gt_df = df[df['data_type'].isin(['synth_realistic', 'synth_custom'])] if 'data_type' in df.columns else df
     if gt_df.empty or 'cancer_type' not in gt_df.columns or 'num_muts' not in gt_df.columns:
         return None
 
     has_data_type_col = 'data_type' in gt_df.columns
     cancer_data_types = sorted(gt_df[['cancer_type', 'data_type']].drop_duplicates().itertuples(index=False)) \
-        if has_data_type_col else [(c, 'realsim') for c in sorted(gt_df['cancer_type'].unique())]
+        if has_data_type_col else [(c, 'synth_realistic') for c in sorted(gt_df['cancer_type'].unique())]
     burdens = sorted(int(b) for b in gt_df['num_muts'].unique())
     if selected_rep is None:
         selected_rep = int(gt_df['replicate'].min()) if 'replicate' in gt_df.columns else 0
@@ -4819,8 +2658,8 @@ def build_signature_activity_data(results_dir, df, tools, colors, out_of_referen
 
     for cancer_type, data_type in cancer_data_types:
         for burden in burdens:
-            weights_path = (results_root / 'generated_data' / data_type /
-                             f'weights_{cancer_type}-w_{selected_rep}-{burden}.dat')
+            run_dir = results_root / 'runs' / data_type / cancer_type / f'{burden}_mutations'
+            weights_path = run_dir / 'samples' / f'known_answer_rep{selected_rep}.dat'
             if not weights_path.exists():
                 continue
             truth_df = pd.read_csv(weights_path, sep='\t', index_col=0)
@@ -4835,9 +2674,9 @@ def build_signature_activity_data(results_dir, df, tools, colors, out_of_referen
                         sig: round(float(v), 2) for sig, v in active.items()
                     }
 
-            base_dir = results_root / data_type / cancer_type / relevance / str(burden) / f'rep_{selected_rep}'
+            fits_dir = run_dir.with_name(run_dir.name + ('_relevant' if relevance == 'relevant' else '')) / 'fits'
             for tool in sorted_tools:
-                contrib_path = base_dir / f'{tool}_contribution.dat'
+                contrib_path = fits_dir / f'{tool}_rep{selected_rep}.dat'
                 if not contrib_path.exists():
                     continue
                 pred_df = pd.read_csv(contrib_path, index_col=0)
@@ -5095,7 +2934,7 @@ def create_signature_activity_widget(data_json, cancer_type, widget_id='sig_acti
 
 
 def create_visualizations_section(df, df_per_sample=None, df_bootstrap=None, df_raw=None,
-                                   results_dir=None, id_prefix='', include_plotly_cdn=True,
+                                   results_dir=None, id_prefix='', include_plotly=True,
                                    out_of_reference_sigs=None, relevance='standard',
                                    unknown_sig_config=None, min_contribution=None):
     """Create main visualizations section with tabs.
@@ -5107,7 +2946,7 @@ def create_visualizations_section(df, df_per_sample=None, df_bootstrap=None, df_
         df_raw: Optional DataFrame with individual realization data (before aggregation)
         results_dir: Optional base results directory for reading contribution files
         id_prefix: String prefix for all HTML element IDs (needed when called multiple times)
-        include_plotly_cdn: Whether to include plotly.js CDN link in the first figure
+        include_plotly: Whether to embed plotly.js with the first figure
         unknown_sig_config: Optional dict {'num_unknowns': int, 'weights': list} with the
             simulated unknown-signature configuration (currently unused here; kept for a
             uniform call signature with create_report_intro/create_appendix_section).
@@ -5159,14 +2998,14 @@ def create_visualizations_section(df, df_per_sample=None, df_bootstrap=None, df_
         # Precision-Recall Trade-off
         fig_pr = create_precision_recall_subplots(cancer_df, cancer_type, tools, colors, df_per_sample)
         html += '<div class="plot-container">\n'
-        html += fig_pr.to_html(include_plotlyjs=True if (i == 0 and include_plotly_cdn) else False, div_id=f'pr_{tab_id}', config={'responsive': True})
+        html += fig_pr.to_html(include_plotlyjs=True if (i == 0 and include_plotly) else False, div_id=f'pr_{tab_id}', config=PLOT_CONFIG)
         html += '</div>\n'
         html += '<p style="color: #666; margin: 1rem 0;"><strong>Precision–Recall Trade-off:</strong> <em>Precision</em> = how many reported signatures were actually present; <em>Recall</em> = how many true signatures were found. Error bars = ±1 SEM. Diagonal lines = F1 contours. A good tool sits in the top-right corner.</p>\n'
 
         # Performance Metrics
         fig_metrics = create_metrics_grid(cancer_df, cancer_type, tools, colors, df_per_sample)
         html += '<div class="plot-container" style="margin-top: 2rem;">\n'
-        html += fig_metrics.to_html(include_plotlyjs=False, div_id=f'metrics_{tab_id}', config={'responsive': True})
+        html += fig_metrics.to_html(include_plotlyjs=False, div_id=f'metrics_{tab_id}', config=PLOT_CONFIG)
         html += '</div>\n'
         html += '<p style="color: #666; margin: 1rem 0;"><strong>Performance vs Mutation Burden:</strong> Mean ± SEM across all samples (x-axis log scale). F1 / P / R / MCC: higher is better. TAE / nRMSE / FP / FN: lower is better.</p>\n'
         html += '</div>\n'  # Close tool comparison section
@@ -5185,7 +3024,7 @@ def create_visualizations_section(df, df_per_sample=None, df_bootstrap=None, df_
                 html += '<p style="color: #666; margin-bottom: 1rem;">Each realization uses the same signature mix but a different random draw of mutations. The variance shown here measures how much a tool\'s result changes across these repeats — a stable tool gives the same answer regardless of the random seed. Lower variance = more reproducible.</p>\n'
                 
                 # Render the figure HTML fragment (no plotly.js) so we can embed custom controls
-                fig_stability_html = fig_stability.to_html(include_plotlyjs=False, full_html=False, div_id=f'stability_{tab_id}', config={'responsive': True})
+                fig_stability_html = fig_stability.to_html(include_plotlyjs=False, full_html=False, div_id=f'stability_{tab_id}', config=PLOT_CONFIG)
 
                 # Build controls: tool checkboxes and mutation-burden checkboxes
                 burdens_stability = sorted(df_per_sample[df_per_sample['cancer_type'] == cancer_type]['num_muts'].unique())
@@ -5267,7 +3106,7 @@ def create_visualizations_section(df, df_per_sample=None, df_bootstrap=None, df_
                 html += '<p style="color: #666; margin-bottom: 1rem;">Each violin/strip shows the spread of a metric across all simulated samples for one tool. A narrow, high-placed distribution = reliable and accurate. Use the dropdown to switch mutation burden.</p>\n'
                 
                 # Render the figure HTML with built-in dropdown (no custom controls needed)
-                fig_html = fig_per_sample.to_html(include_plotlyjs=False, full_html=False, div_id=f'per_sample_{tab_id}', config={'responsive': True})
+                fig_html = fig_per_sample.to_html(include_plotlyjs=False, full_html=False, div_id=f'per_sample_{tab_id}', config=PLOT_CONFIG)
 
                 # Simple layout without custom controls (dropdown is built into the plot)
                 html += '<div class="plot-container">\n'
@@ -5315,7 +3154,7 @@ def create_visualizations_section(df, df_per_sample=None, df_bootstrap=None, df_
                 html += f'<p style="color: #666; margin-bottom: 1rem;">{section_desc}</p>\n'
 
                 # Render the figure HTML with built-in dropdown (no custom controls needed)
-                fig_html = fig_per_method.to_html(include_plotlyjs=False, full_html=False, div_id=div_id, config={'responsive': True})
+                fig_html = fig_per_method.to_html(include_plotlyjs=False, full_html=False, div_id=div_id, config=PLOT_CONFIG)
 
                 # Simple layout without custom controls (dropdown is built into the plot)
                 html += '<div class="plot-container">\n'
@@ -5347,7 +3186,7 @@ def create_visualizations_section(df, df_per_sample=None, df_bootstrap=None, df_
     # Precision-Recall plot
     fig_agg = create_aggregate_plot(df, tools, colors, df_per_sample)
     html += '<div class="plot-container">\n'
-    html += fig_agg.to_html(include_plotlyjs=False, div_id=f'{id_prefix}aggregate_plot', config={'responsive': True})
+    html += fig_agg.to_html(include_plotlyjs=False, div_id=f'{id_prefix}aggregate_plot', config=PLOT_CONFIG)
     html += '</div>\n'
     
     # Aggregate metrics grid (pooled across cancer types)
@@ -5373,7 +3212,7 @@ def create_visualizations_section(df, df_per_sample=None, df_bootstrap=None, df_
     
     fig_agg_metrics = create_metrics_grid(agg_metrics_df, 'All Cancer Types (Pooled)', tools, colors, df_per_sample, pooled=True)
     html += '<div class="plot-container">\n'
-    html += fig_agg_metrics.to_html(include_plotlyjs=False, div_id=f'{id_prefix}aggregate_metrics_grid', config={'responsive': True})
+    html += fig_agg_metrics.to_html(include_plotlyjs=False, div_id=f'{id_prefix}aggregate_metrics_grid', config=PLOT_CONFIG)
     html += '</div>\n'
     
     html += '</div>\n'
@@ -5429,20 +3268,23 @@ def create_visualizations_section(df, df_per_sample=None, df_bootstrap=None, df_
 def find_failed_tool_runs(results_dir, data_type):
     """Tool runs that recorded a failure in their result file ("# TOOL FAILED: <reason>").
 
-    Looks in results_dir/{data_type}/{dataset}/{relevance}/{num_muts}/rep_{rep}/ (the RUN_DIR
-    layout in workflow/rules/common.smk).
+    Looks in results_dir/runs/{data_type}/{dataset}/{num_muts}_mutations[_relevant]/fits/
+    (the results layout in workflow/rules/common.smk).
     """
     failed = []
     if not results_dir or not data_type:
         return failed
-    for path in sorted((Path(results_dir) / data_type).glob("*/*/*/rep_*/*_contribution.dat")):
+    for path in sorted((Path(results_dir) / 'runs' / data_type).glob("*/*_mutations*/fits/*_rep*.dat")):
         with open(path) as f:
             first_line = f.readline().strip()
         if first_line.startswith("# TOOL FAILED"):
-            dataset, relevance, num_muts, rep = path.parts[-5:-1]
+            tool, rep = path.stem.rsplit("_rep", 1)
+            dataset, run_name = path.parts[-4], path.parts[-3]
+            num_muts, _, ending = run_name.partition("_mutations")
+            run = f"{dataset}, {num_muts} mutations, repeat {rep}"
             failed.append({
-                "tool": path.name[:-len("_contribution.dat")],
-                "run": f"{dataset}, {num_muts} mutations, {relevance}, {rep.replace('_', ' ')}",
+                "tool": tool,
+                "run": run + (", relevant signatures" if ending else ""),
                 "reason": first_line.split(":", 1)[-1].strip() or "see the tool's log",
             })
     return failed
@@ -5497,7 +3339,7 @@ def generate_report(df, output_file, title, subtitle, df_per_sample=None, df_boo
                           in the Signature Activity widget
         relevance: Relevance mode subdirectory name used under results_dir/synthetic/{cancer}/{relevance}/...
         df_benchmarks: Optional pandas.DataFrame with per-tool wall time / peak memory
-                          (all_tool_benchmarks.tsv — see aggregate_tool_benchmarks.py)
+                          (summary/tool_benchmarks.tsv — see aggregate_tool_benchmarks.py)
         min_contribution: Optional float — config's evaluation.min_contribution (the
                           mutation-count threshold for a signature to count as "active";
                           see create_appendix_section / build_signature_activity_data)
@@ -5514,7 +3356,7 @@ def generate_report(df, output_file, title, subtitle, df_per_sample=None, df_boo
     appendix_html = create_appendix_section(df, df_raw, unknown_sig_config, cosmic_version_label, min_contribution)
 
     # Build visualizations section — one sub-section per data_type when multiple exist
-    data_types = sorted(df['data_type'].unique()) if 'data_type' in df.columns else ['realsim']
+    data_types = sorted(df['data_type'].unique()) if 'data_type' in df.columns else ['synth_realistic']
     if len(data_types) <= 1:
         visualizations_html = create_visualizations_section(
             df, df_per_sample, df_bootstrap, df_raw, results_dir,
@@ -5562,7 +3404,7 @@ def generate_report(df, output_file, title, subtitle, df_per_sample=None, df_boo
             inner = create_visualizations_section(
                 dt_df, dt_per_sample, df_bootstrap, df_raw, results_dir,
                 id_prefix=f'{dt}_',
-                include_plotly_cdn=(dt_idx == 0),
+                include_plotly=(dt_idx == 0),
                 out_of_reference_sigs=out_of_reference_sigs,
                 relevance=relevance,
                 unknown_sig_config=unknown_sig_config,
@@ -5650,7 +3492,7 @@ def main(summaries, per_sample, bootstrap_quality, output, title, subtitle,
                     print(f"  - With fixed weights: {out_of_ref_weights}")
                 else:
                     print("\nNo unknown signatures configured (out_of_reference_sigs is empty)")
-                if data_type == 'custom':
+                if data_type == 'synth_custom':
                     # Custom datasets have their own catalogue and hidden signatures
                     datasets = (config_data.get('custom_datasets') or {}).values()
                     catalogues = {ds.get('signature_file') or
@@ -5692,7 +3534,7 @@ def main(summaries, per_sample, bootstrap_quality, output, title, subtitle,
         print(f"\nLoading bootstrap quality assessment from {len(bootstrap_quality)} file(s)...")
         df_bootstrap = load_evaluation_data(bootstrap_quality)
 
-    # Load per-tool wall time / peak memory if provided (all_tool_benchmarks.tsv, written
+    # Load per-tool wall time / peak memory if provided (summary/tool_benchmarks.tsv, written
     # by aggregate_tool_benchmarks.py from Snakemake's benchmark: TSVs — see tools.smk)
     df_benchmarks = None
     if tool_benchmarks:

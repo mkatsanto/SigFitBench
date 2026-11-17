@@ -13,8 +13,8 @@ import os
 
 wildcard_constraints:
     format=r"(tab_with_index|csv_no_index|csv_with_index|csv_quoted)",
-    data_type=r"(realsim|real)",
-    num_muts=r"(\d+|none)",
+    data_type=r"(synth_realistic|synth_custom|real)",
+    num_muts=r"(\d+|all)",
     dataset=r"[A-Za-z0-9_-]+"
 
 
@@ -31,12 +31,12 @@ rule cosmic_signatures_by_format:
         base_cosmic=config.get("cosmic_signatures", {}).get("base_file", "input/COSMIC_v3.4_SBS_GRCh38.txt"),
         script=os.path.join(workflow.basedir, "..", "scripts", "convert_cosmic_format.py")
     output:
-        os.path.join(config["output_dir"], "cosmic_signatures", "COSMIC_v3_SBS_GRCh38_{format}.txt")
+        os.path.join(config["output_dir"], REFERENCE_DIR, "{format}.txt")
     params:
         exclude_sigs=lambda wc: " -e '" + ",".join(config["out_of_reference_sigs"]) + "'" if config["out_of_reference_sigs"] else ""
     log:
-        stderr=os.path.join(config["log_dir"], "cosmic_signatures_by_format_{format}.stderr.log"),
-        stdout=os.path.join(config["log_dir"], "cosmic_signatures_by_format_{format}.stdout.log")
+        stderr=os.path.join(config["log_dir"], REFERENCE_DIR, "{format}.stderr.log"),
+        stdout=os.path.join(config["log_dir"], REFERENCE_DIR, "{format}.stdout.log")
     conda:
         os.path.join(workflow.basedir, "envs", "python.yaml")
     shell:
@@ -52,18 +52,18 @@ rule cosmic_signatures_by_format_custom:
     own out_of_reference_sigs (none by default).
     """
     input:
-        base_cosmic=lambda wildcards: signature_catalogue("custom", wildcards.dataset),
+        base_cosmic=lambda wildcards: signature_catalogue("synth_custom", wildcards.dataset),
         script=os.path.join(workflow.basedir, "..", "scripts", "convert_cosmic_format.py")
     output:
-        os.path.join(config["output_dir"], "cosmic_signatures", "COSMIC_v3_SBS_GRCh38_{format}_CUSTOM_{dataset}.txt")
+        os.path.join(config["output_dir"], REFERENCE_DIR, "custom_{dataset}", "{format}.txt")
     params:
         exclude_sigs=lambda wc: (
             " -e '" + ",".join(config["custom_datasets"][wc.dataset].get("out_of_reference_sigs", [])) + "'"
             if config["custom_datasets"][wc.dataset].get("out_of_reference_sigs") else ""
         )
     log:
-        stderr=os.path.join(config["log_dir"], "cosmic_signatures_by_format_custom_{format}_{dataset}.stderr.log"),
-        stdout=os.path.join(config["log_dir"], "cosmic_signatures_by_format_custom_{format}_{dataset}.stdout.log")
+        stderr=os.path.join(config["log_dir"], REFERENCE_DIR, "custom_{dataset}", "{format}.stderr.log"),
+        stdout=os.path.join(config["log_dir"], REFERENCE_DIR, "custom_{dataset}", "{format}.stdout.log")
     conda:
         os.path.join(workflow.basedir, "envs", "python.yaml")
     shell:
@@ -82,20 +82,17 @@ rule cosmic_signatures_by_format_relevant:
         base_cosmic=config["cosmic_signatures"]["base_file"],
         script=os.path.join(workflow.basedir, "..", "scripts", "convert_cosmic_format.py"),
         active_sigs=lambda wc: (
-            os.path.join(config['output_dir'], "relevant_signatures",
+            os.path.join(config['output_dir'], "internal", "relevant_signatures",
                         f"{wc.data_type}_{wc.num_muts}_active_signatures.txt")
             if config.get('relevant_signatures') == "auto" else []
         )
     output:
-        os.path.join(config["output_dir"], "cosmic_signatures",
-                    "COSMIC_v3_SBS_GRCh38_{format}_RELEVANT_{data_type}_{num_muts}.txt")
+        os.path.join(config["output_dir"], REFERENCE_DIR, "relevant_{data_type}_{num_muts}", "{format}.txt")
     params:
         relevant_sigs=lambda wc: get_relevant_signatures_for_cosmic(wc)
     log:
-        stderr=os.path.join(config["log_dir"],
-                    "cosmic_signatures_by_format_relevant_{format}_{data_type}_{num_muts}.stderr.log"),
-        stdout=os.path.join(config["log_dir"],
-                    "cosmic_signatures_by_format_relevant_{format}_{data_type}_{num_muts}.stdout.log")
+        stderr=os.path.join(config["log_dir"], REFERENCE_DIR, "relevant_{data_type}_{num_muts}", "{format}.stderr.log"),
+        stdout=os.path.join(config["log_dir"], REFERENCE_DIR, "relevant_{data_type}_{num_muts}", "{format}.stdout.log")
     conda:
         os.path.join(workflow.basedir, "envs", "python.yaml")
     shell:
