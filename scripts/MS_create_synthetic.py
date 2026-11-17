@@ -125,6 +125,19 @@ def save_synthetic_catalogs(
             print(f"Warning: unknown output format '{fmt}', skipping")
 
 
+def save_run_files(counts: pd.DataFrame, weights: pd.DataFrame,
+                   counts_file: str, known_answer_file: str) -> None:
+    """Write the mutation counts (mutation types x samples, first column "Type") and the
+    known answer (signatures x samples, shares) to the given files."""
+    for path in (counts_file, known_answer_file):
+        Path(path).parent.mkdir(parents=True, exist_ok=True)
+    counts = counts.copy()
+    counts.index.name = 'Type'
+    counts.to_csv(counts_file, sep='\t')
+    weights.T.to_csv(known_answer_file, sep='\t')
+    print(f'Saved {counts_file} and {known_answer_file}')
+
+
 def add_out_of_reference_signatures(
     contribs: pd.DataFrame,
     out_of_reference_weights: list,
@@ -235,8 +248,14 @@ def create_synthetic_catalog(
     out_sigs: Optional[list] = None,
     cancer_type: Optional[str] = None,
     realization: Optional[int] = None,
+    counts_file: Optional[str] = None,
+    known_answer_file: Optional[str] = None,
 ) -> None:
-    """Create synthetic mutational catalogs and optionally save ground-truth weights."""
+    """Create synthetic mutational catalogs and optionally save ground-truth weights.
+
+    With counts_file and known_answer_file, writes exactly those two files (as the
+    workflow does); otherwise names the files after output_dir, cancer type and repeat.
+    """
     mutation_seed = random_seed + (realization if realization is not None else 0)
     print(f'=== Creating synthetic mutational catalog ===')
     print(f'  Samples: {num_samples} | Mutations: {num_muts}')
@@ -293,6 +312,10 @@ def create_synthetic_catalog(
         signature_profiles,
         epsilon,
     )
+
+    if counts_file and known_answer_file:
+        save_run_files(synthetic_catalog, normalized_contribs, counts_file, known_answer_file)
+        return
 
     # Infer cancer type from filename if not supplied.
     # Expected filename format: signature_contributions_{WGS|WES}_{cancer_type}.dat
@@ -377,6 +400,10 @@ Examples:
     parser.add_argument('--realization', type=int, default=None,
                         help='Realisation index; offsets the mutation seed so each rep '
                              'produces different counts with identical weights')
+    parser.add_argument('--counts_file', default=None,
+                        help='Write the mutation counts to this file (with --known_answer_file)')
+    parser.add_argument('--known_answer_file', default=None,
+                        help='Write the true signature weights to this file (with --counts_file)')
 
     args = parser.parse_args()
 
@@ -394,6 +421,8 @@ Examples:
         out_sigs=args.out_sigs,
         cancer_type=args.cancer_type,
         realization=args.realization,
+        counts_file=args.counts_file,
+        known_answer_file=args.known_answer_file,
     )
 
 
