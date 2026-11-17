@@ -2,12 +2,9 @@ channels:
   - conda-forge
   - bioconda
 dependencies:
+  # what SigVCF needs; SigVCF itself is run locally from its source folder (config 'sigvcf_source', default ../SigVCF),
+  # see SIGVCF_SOURCE in workflow/rules/vcf_input.smk. It is not pip-installed here: Snakemake builds this environment from a copy of this file
+  # in .snakemake/conda/, where a relative path such as ../SigVCF no longer points to the source.
   - python=3.10
   - pandas
   - pysam
-  - pip
-  - pip:
-    # SigVCF is a sibling package in this checkout, not published anywhere --
-    # path is relative to the working directory snakemake is invoked from
-    # (SigFitBench/), not to this env file.
-    - -e ../SigVCF

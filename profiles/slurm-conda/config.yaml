@@ -21,11 +21,11 @@ default-resources:
   runtime: 60
 
 set-resources:
-  create_realsim_catalog:
+  create_synth_realistic_catalog:
     runtime: 15
   prepare_real_catalog:
     runtime: 30
-  create_custom_catalog:
+  create_synth_custom_catalog:
     runtime: 30
   cosmic_signatures_by_format:
     runtime: 15
