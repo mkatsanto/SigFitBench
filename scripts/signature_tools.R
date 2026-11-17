@@ -9,7 +9,14 @@ option_list <- list(
   make_option("--nboot", type = "integer", default = 100),
   make_option("--nparallel", type = "integer", default = 1)
 )
-opt <- parse_args(OptionParser(option_list = option_list))
+parsed <- parse_args(OptionParser(option_list = option_list), positional_arguments = TRUE)
+opt <- parsed$options
+
+# extra arguments from the config (tool_overrides: signature_tools: extra), given as name=value
+extra <- list()
+for (word in parsed$args) {
+  extra[[sub("=.*", "", word)]] <- type.convert(sub("^[^=]*=", "", word), as.is = TRUE)
+}
 
 # Safety net for signature.tools.lib (installed via GitHub, not conda): if
 # for any reason it isn't already installed, install it here instead.
@@ -63,10 +70,12 @@ mut_mat <- mut_mat[rownames(cosmic3), , drop = FALSE]
 
 # Fit one sample at a time
 exposures <- do.call(rbind, lapply(colnames(mut_mat), function(s) {
-  res <- Fit(catalogues = mut_mat[, s, drop = FALSE], signatures = cosmic3,
-             method = opt$method,
-             exposureFilterType = opt$filter_type,
-             useBootstrap = TRUE, nboot = opt$nboot, nparallel = opt$nparallel)
+  arguments <- list(catalogues = mut_mat[, s, drop = FALSE], signatures = cosmic3,
+                    method = opt$method,
+                    exposureFilterType = opt$filter_type,
+                    useBootstrap = TRUE, nboot = opt$nboot, nparallel = opt$nparallel)
+  arguments[names(extra)] <- extra
+  res <- do.call(Fit, arguments)
   one <- res$exposures[1, , drop = FALSE]
   rownames(one) <- s
   one

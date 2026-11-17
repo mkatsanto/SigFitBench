@@ -23,7 +23,11 @@ counts <- counts[rownames(cosmic), , drop = FALSE]
 fit <- matrix(0, nrow=ncol(cosmic), ncol=ncol(counts),
               dimnames=list(colnames(cosmic), colnames(counts)))
 for (s in colnames(counts)) {
-  one <- sig_fit(counts[, s, drop=FALSE], cosmic, method=snakemake@params[["method"]])
+  arguments <- list(catalogue_matrix=counts[, s, drop=FALSE], sig=cosmic, method=snakemake@params[["method"]])
+  # extra arguments from the config (tool_overrides: sigminer: extra) are added or replace these
+  extra <- snakemake@params[["extra"]]
+  arguments[names(extra)] <- extra
+  one <- do.call(sig_fit, arguments)
   fit[rownames(one), s] <- one[, 1]
 }
 write.csv(fit, file=snakemake@output[["result"]])

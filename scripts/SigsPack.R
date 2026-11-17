@@ -22,7 +22,11 @@ mut_mat <- mut_mat[rownames(cosmic3), , drop = FALSE]
 exposures <- matrix(0, nrow=ncol(cosmic3), ncol=ncol(mut_mat),
                     dimnames=list(colnames(cosmic3), colnames(mut_mat)))
 for (s in colnames(mut_mat)) {
-  one <- signature_exposure(mut_mat[, s, drop=FALSE], P=cosmic3)$exposures
+  arguments <- list(mut_cat=mut_mat[, s, drop=FALSE], P=cosmic3)
+  # extra arguments from the config (tool_overrides: sigspack: extra) are added or replace these
+  extra <- snakemake@params[["extra"]]
+  arguments[names(extra)] <- extra
+  one <- do.call(signature_exposure, arguments)$exposures
   # SigsPack reports shares of the sample; convert to numbers of mutations
   exposures[rownames(one), s] <- one[, 1] * sum(mut_mat[, s])
 }

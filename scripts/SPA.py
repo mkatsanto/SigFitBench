@@ -36,7 +36,7 @@ for s in counts.columns:
     os.makedirs(s, exist_ok=True)
     sample_file = os.path.join(s, "counts.txt")
     counts[[s]].to_csv(sample_file, sep='\t')
-    Analyze.cosmic_fit(
+    arguments = dict(
         samples=sample_file,
         input_type='matrix',
         output=s,
@@ -46,6 +46,9 @@ for s in counts.columns:
         initial_remove_penalty=snakemake.params.initial_remove_penalty,
         cpu=snakemake.threads,
     )
+    # extra arguments from the config (tool_overrides: <tool>: extra) are added or replace these
+    arguments.update(snakemake.params.get('extra', {}))
+    Analyze.cosmic_fit(**arguments)
     fits.append(pd.read_csv(
         os.path.join(s, "Assignment_Solution/Activities/Assignment_Solution_Activities.txt"),
         sep='\t', index_col='Samples'
