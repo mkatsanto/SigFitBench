@@ -12,18 +12,18 @@ not active.
 | Setting | Example | Meaning |
 |---|---|---|
 | `tools_to_run` **required** | `["SPA", "MuSiCal"]` | Tools to compare. Names as in the [tool table](https://github.com/mkatsanto/SigFitBench#fitting-tools), spelled exactly. |
-| `data_types` | `["realsim"]` | Where catalogs come from: `realsim`, `custom`, `real`. Several allowed. |
+| `data_types` | `["synth_realistic"]` | Where catalogs come from: `synth_realistic`, `synth_custom`, `real`. Several allowed. |
 | `relevance_modes` | `["standard"]` | Keep at `["standard"]`: tools fit against all COSMIC signatures minus the hidden ones. |
 
-## Simulated data (`realsim`, `custom`)
+## Simulated data (`synth_realistic`, `synth_custom`)
 
 | Setting | Example | Meaning |
 |---|---|---|
-| `cancer_types` | `["Head-SCC", "Breast"]` | Tissues to simulate (`realsim` only). Each needs `cosmic_tissue_data/signature_contributions_{WGS or WES}_{tissue}.dat`. |
+| `cancer_types` | `["Head-SCC", "Breast"]` | Tissues to simulate (`synth_realistic` only). Each needs `cosmic_tissue_data/signature_contributions_{WGS or WES}_{tissue}.dat`. |
 | `num_muts` **required** | `[1000, 10000]` | Mutations per sample. One run per value. Use `[]` when only `real` is active. |
-| `num_samples` | `30` | Different signature mixes per tissue (`realsim` only). |
+| `num_samples` | `30` | Different signature mixes per tissue (`synth_realistic` only). |
 | `num_realizations` | `1` | Times each mix is drawn again with fresh random counts. |
-| `out_of_reference_sigs` **required** | `["SBS86", "SBS90"]` | Signatures removed from the tools' reference (`realsim`). Use `[]` for none. |
+| `out_of_reference_sigs` **required** | `["SBS86", "SBS90"]` | Signatures removed from the tools' reference (`synth_realistic`). Use `[]` for none. |
 | `out_of_reference_weights` | `[0.1]` | One value per hidden signature added to each sample: its share of mutations. `[0]` or `[]` adds none. |
 | `random_seed` | `0` | Same seed, same simulated data. |
 | `wgs_or_wes` | `"WGS"` | Tissue profiles for whole genomes (`WGS`) or exomes (`WES`). Fewer tissues exist for `WES`. |
@@ -54,7 +54,13 @@ real_datasets:
     cancer_types: ["Breast-AdenoCA", "Skin-Melanoma"]   # optional: only these tissues
   MyCohort:
     catalog: "input/my_cohort.tsv"                      # 96 mutation types x samples
+  MyVCFs:
+    vcf_dir: "input/my_vcfs"                            # one VCF per sample instead of a catalog
+    reference_fasta: "input/ref/genome.fa"              # same genome build as the VCFs, with a .fai index
 ```
+
+An entry with `vcf_dir` instead of `catalog` has its catalog built by the workflow (SigVCF), one column per VCF. SigVCF runs
+from its source folder: set `sigvcf_source` (default: the `SigVCF` folder next to SigFitBench).
 
 Each entry is one catalog. Columns named `Tissue::Sample` are split into one group per
 tissue; `cancer_types` keeps only the tissues listed. Catalogs without `::` in their
@@ -113,11 +119,36 @@ Optional:
 | | `p_thresh` | `0.05` | Remove a signature only if the test p-value is at least this |
 | | `likelihood` | `"neg.binom"` | or `"multinom"` |
 | | `threads` | `4` | Cores per job |
-| | `extra` | `{}` | Any other mSigAct `SparseAssignActivity` argument, e.g. `max.subsets: 2500` |
+| | `extra` | `{}` | Any other mSigAct `SparseAssignActivity` argument, e.g. `max.subsets: 2500` (any tool can have this, see below) |
 | `starsigndna` | `n_iterations` | `1000` | Optimisation steps |
 
 `SPA` and `SPA_low` have no settings; they differ only in the removal penalty (0.05 and
 0.02).
+
+## Extra tool arguments
+
+To use a tool option that has no setting above, add it under `extra` for that tool, in the run's
+config. Use the tool's own argument name:
+
+```yaml
+tool_overrides:
+  sigminer:
+    extra:
+      auto_reduce: true      # argument of the R function sig_fit()
+  sigtrim:
+    extra:
+      --verbose: true        # flag of the sigtrim command: true gives the flag alone, false leaves it out
+```
+
+- **Priority:** a value here replaces the workflow's own value for that argument.
+- **Blocked arguments:** the workflow stops with an error if you set an argument it controls itself,
+  such as the input data, the output or the number of cores. The full list is
+  `PROTECTED_ARGUMENTS` in `workflow/rules/common.smk`.
+- **Wrong arguments:** a tool that rejects an argument is reported like any other tool failure:
+  its result file says `# TOOL FAILED`, and the reason is in its log.
+- **Reruns:** only the tool whose values changed reruns. Tools with no values set are not affected.
+- **Not included:** SigNoise and SigNoiseID, which take all their options from `tool_overrides`.
+- **`signature_tools`:** single values only, no lists.
 
 ## Changing defaults without editing the config
 

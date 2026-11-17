@@ -17,18 +17,60 @@ To make your own, copy the closest scenario, give it a new `output_dir` and `log
 and change the settings described below. Every scenario has the same
 "Shared settings" block at the end; you rarely need to change it.
 
-| Scenario | Known answer? | Time on a laptop |
-|---|---|---|
-| [Quick test](#quick-test) | Yes | minutes |
-| [Unknown signatures](#unknown-signatures) | Yes | about an hour |
-| [Mutation burden](#mutation-burden) | Yes | about an hour |
-| [Custom mixtures](#custom-mixtures) | Yes | minutes |
-| [Own catalog](#own-catalog) | No | minutes |
-| [Real PCAWG](#real-pcawg) | No | minutes |
-| [Full benchmark](#full-benchmark) | Yes | days: use a cluster |
+| Scenario | Data type | Known answer? | Time on a laptop |
+|---|---|---|---|
+| [Quick test](#quick-test) | `synth_realistic` | Yes | minutes |
+| [Unknown signatures](#unknown-signatures) | `synth_realistic` | Yes | about an hour |
+| [Mutation burden](#mutation-burden) | `synth_realistic` | Yes | about an hour |
+| [Custom mixtures](#custom-mixtures) | `synth_custom` | Yes | minutes |
+| [Own catalog](#own-catalog) | `real` | No | minutes |
+| [Real PCAWG](#real-pcawg) | `real` | No | minutes |
+| [Full benchmark](#full-benchmark) | `synth_realistic` | Yes | days: use a cluster |
 
 Times are after the tool environments exist. The first run of any scenario also builds
 them (30–60 minutes).
+
+---
+
+## Where the samples come from
+
+The `data_types` setting chooses the source of the mutation catalogs. Each data type
+gets its own report.
+
+| `data_types` | Samples | Known answer? | Report |
+|---|---|---|---|
+| `synth_realistic` | Simulated, with signature mixes taken from real tumours of a tissue | Yes | `report_synth_realistic.html` |
+| `synth_custom` | Simulated, with signature mixes from your own table | Yes | `report_synth_custom.html` |
+| `real` | Real samples: PCAWG or your own catalog | No: tools are compared with each other | `report_real.html` |
+
+### `synth_realistic`: realistic simulations
+
+Most scenarios use `synth_realistic`. Its samples look like real tumours of the tissues in
+`cancer_types` because their signature mixes come from real tumours of that tissue.
+
+`cosmic_tissue_data/` holds, for each tissue, the signature activity COSMIC found in each
+tumour: PCAWG genomes for `WGS` (57 head and neck tumours, 695 breast tumours, …) or
+TCGA exomes for `WES`. For each simulated sample, SigFitBench:
+
+1. **Picks a tumour** of that tissue at random. Different samples can pick the same
+   tumour, so `num_samples` can be larger than the number of tumours.
+2. **Takes its signature mix**, scaled to `num_muts` mutations. Signatures that would
+   get fewer than 10 mutations are dropped, because they could not be found in a
+   sample that small. This is why a sample's mix can lose its smallest signatures at
+   low mutation counts.
+3. **Adds hidden signatures** if `out_of_reference_weights` is set (see
+   [Unknown signatures](#unknown-signatures)). The other signatures shrink to make room.
+4. **Draws the mutations**: `num_muts` mutations spread over the 96 mutation types
+   according to the mix. `num_realizations` repeats this step with new random draws.
+
+The mix of each sample is saved as the known answer that every tool is scored against.
+Sample `S0` always picks the same tumour for a given `random_seed`, whatever `num_muts`
+is. Its known answer can still differ between `num_muts` values, because of step 2: at
+100 mutations, samples have about 3 signatures on average; at 50,000, about 5.
+
+Use `synth_custom` instead when you want to choose the mixes yourself
+([Custom mixtures](#custom-mixtures)), and `real` to fit samples that were not simulated
+([Own catalog](#own-catalog)).
 
 ---
 
@@ -41,7 +83,7 @@ them (30–60 minutes).
 Three fast tools (`MutationalPatterns`, `deconstructSigs`, `SPA`), one tissue
 (`Head-SCC`), three samples, 1,000 and 10,000 mutations. No unknown signatures.
 
-**Check:** `results_quick_test/sigfitbench_report_realistic_simulations.html` opens and
+**Check:** `results_quick_test/report_synth_realistic.html` opens and
 shows three tools. If a tool is missing, see its log in `logs_quick_test/`.
 
 **Next:** add the tools you want to compare to `tools_to_run` and run it again. Only
@@ -147,7 +189,7 @@ with_unknown   0.3    0      0.3    0      0.1    0.1    0.2
 **Settings that matter:**
 
 ```yaml
-data_types: ["custom"]
+data_types: ["synth_custom"]
 custom_datasets:
   ExampleMix:                                    # name used in result folders and the report
     combinations_file: "config/scenarios/custom_mixtures.tsv"
@@ -158,7 +200,7 @@ num_realizations: 5                              # 5 random draws of each row
 
 - `num_samples` is not used: the table sets the samples.
 - Hidden signatures for a custom table go **inside** its `custom_datasets` entry. The
-  top-level `out_of_reference_sigs` applies only to `realsim`.
+  top-level `out_of_reference_sigs` applies only to `synth_realistic`.
 - You can list several tables under `custom_datasets`; each gets its own tab in the report.
 - `signature_file` (optional) uses another COSMIC version for this table. It is needed
   when the table uses signatures that are only in newer versions (e.g. `SBS40a`,
@@ -167,10 +209,10 @@ num_realizations: 5                              # 5 random draws of each row
 **A larger example:** [`config/config_custom.yaml`](https://github.com/mkatsanto/SigFitBench/blob/main/config/config_custom.yaml)
 with the table [`config/custom.tsv`](https://github.com/mkatsanto/SigFitBench/blob/main/config/custom.tsv).
 It has 100 samples. Each one has SBS3 and SBS5 plus three other signatures, every
-signature at 20%. It is fitted against COSMIC v3.4 and runs together with a `realsim`
+signature at 20%. It is fitted against COSMIC v3.4 and runs together with a `synth_realistic`
 run on all 12 tissues.
 
-**Read the results:** `results_custom_mixtures/sigfitbench_report_synthetic.html`. The
+**Read the results:** `results_custom_mixtures/report_synth_custom.html`. The
 "Signature activity per sample" section compares the known mix of each row with what
 each tool found.
 
@@ -215,7 +257,7 @@ cosmic_signatures:
 `input/` has COSMIC files for GRCh37 and GRCh38. Use the one matching the genome your
 mutations were called on.
 
-**Read the results:** `results_own_catalog/sigfitbench_report_real_samples.html` shows,
+**Read the results:** `results_own_catalog/report_real.html` shows,
 per tissue, how similar each pair of tools' results is, which signatures each tool
 reports, and what share of mutations each tool leaves unassigned. See
 [Results and metrics](results.md#comparing-tools-without-a-known-answer).
@@ -271,22 +313,3 @@ snakemake --profile profiles/slurm-generic \
 Fill in your partition and account in `profiles/slurm-generic/config.yaml` first.
 `mmsig`, `mSigAct` and `StarSignDNA` take most of the time; leave them out of
 `tools_to_run` for a faster first pass.
-
----
-
-## Combining scenarios
-
-One config can hold several data types. For example, to score tools on simulated data
-and then see whether they agree on your own samples, in a single run:
-
-```yaml
-data_types: ["realsim", "real"]
-cancer_types: ["Breast"]
-num_muts: [2000, 20000]
-num_samples: 20
-real_datasets:
-  MyCohort:
-    catalog: "input/my_cohort.tsv"
-```
-
-Each data type gets its own report in the same `output_dir`.

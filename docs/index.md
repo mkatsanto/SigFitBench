@@ -23,6 +23,7 @@ The first run builds one conda environment per tool (30–60 minutes).
 - **[Guide](guide.md)**: the questions SigFitBench answers, each with a ready-to-run config
 - **[Configuration](configuration.md)**: every setting
 - **[Results and metrics](results.md)**: output files, scores and the report
+- **[Add your own tool](add_a_tool.md)**: benchmark a tool of yours next to the others
 
 Installation, the list of tools, cluster use and citations are in the
 [README](https://github.com/mkatsanto/SigFitBench#readme).
