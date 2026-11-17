@@ -8,6 +8,7 @@ nav:
   - Guide: guide.md
   - Configuration: configuration.md
   - Results and metrics: results.md
+  - Add your own tool: add_a_tool.md
 
 theme:
   name: material

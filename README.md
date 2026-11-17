@@ -18,7 +18,7 @@ follows the approach of [Medo et al., 2024](https://doi.org/10.1038/s41467-024-5
 3. **Score** each tool (error, precision, recall, F1, MCC)
 4. **Report** where each tool works well and where it does not
 
-📖 **Docs:** [Guide](docs/guide.md) · [Configuration reference](docs/configuration.md) · [Results and metrics](docs/results.md)
+📖 **Docs:** [Guide](docs/guide.md) · [Configuration reference](docs/configuration.md) · [Results and metrics](docs/results.md) · [Add your own tool](docs/add_a_tool.md)
 
 ---
 
@@ -65,7 +65,7 @@ snakemake --profile profiles/local-conda \
   --snakefile workflow/Snakefile --configfile config/scenarios/quick_test.yaml
 ```
 
-Then open `results_quick_test/sigfitbench_report_realistic_simulations.html` in a browser.
+Then open `results_quick_test/report_synth_realistic.html` in a browser.
 
 The `local-conda` profile turns on `--use-conda`, `--rerun-incomplete` and `--keep-going`,
 and uses 12 cores. Change the core count with `--cores N`.
@@ -81,25 +81,27 @@ question. Copy the one closest to yours and change it. The
 [guide](docs/guide.md) explains each one: what it tests, which settings matter, and how
 to read the results.
 
-| Scenario | Config | Question it answers | Data |
+| Scenario | Config | Question it answers | Data type |
 |---|---|---|---|
-| Quick test | [`quick_test.yaml`](config/scenarios/quick_test.yaml) | Does the installation work? | Simulated |
-| Unknown signatures | [`unknown_signatures.yaml`](config/scenarios/unknown_signatures.yaml) | What happens when tumours carry signatures the tools don't know? | Simulated |
-| Mutation burden | [`mutation_burden.yaml`](config/scenarios/mutation_burden.yaml) | How does accuracy change from 100 to 50,000 mutations, and how much is chance? | Simulated |
-| Custom mixtures | [`custom_mixtures.yaml`](config/scenarios/custom_mixtures.yaml) | How do tools handle signature mixes I choose? | Simulated from your table |
-| Own catalog | [`own_catalog.yaml`](config/scenarios/own_catalog.yaml) | Do the tools agree on my samples? | Your catalog |
-| Real PCAWG | [`real_pcawg.yaml`](config/scenarios/real_pcawg.yaml) | Do the tools agree on real tumours? | PCAWG genomes (not included) |
-| Full benchmark | [`full_benchmark.yaml`](config/scenarios/full_benchmark.yaml) | All tools, all tissues: for a cluster | Simulated |
+| Quick test | [`quick_test.yaml`](config/scenarios/quick_test.yaml) | Does the installation work? | `synth_realistic` |
+| Mutation burden | [`mutation_burden.yaml`](config/scenarios/mutation_burden.yaml) | How does accuracy change from 100 to 50,000 mutations, and how much is chance? | `synth_realistic` |
+| Custom mixtures | [`custom_mixtures.yaml`](config/scenarios/custom_mixtures.yaml) | How do tools handle signature mixes I choose? | `synth_custom` |
+| Own catalog | [`own_catalog.yaml`](config/scenarios/own_catalog.yaml) | Do the tools agree on my samples? | `real` |
+| Real PCAWG | [`real_pcawg.yaml`](config/scenarios/real_pcawg.yaml) | Do the tools agree on real tumours? | `real` (PCAWG file not included) |
+| Full benchmark | [`full_benchmark.yaml`](config/scenarios/full_benchmark.yaml) | All tools, all tissues: for a cluster | `synth_realistic` |
+| Unknown signatures | [`unknown_signatures.yaml`](config/scenarios/unknown_signatures.yaml) | What happens when tumours carry signatures the tools don't know? | `synth_realistic` |
 
-Simulated data has a known answer, so tools are scored against it. Real data has none,
-so tools are compared with each other instead.
+`synth_realistic` and `synth_custom` are simulated, so they have a known answer and tools are scored
+against it. `real` data has none, so tools are compared with each other instead. See
+[Data types](#configuration) below.
 
 ---
 
 ## Fitting tools
 
 Put any of these names in `tools_to_run`, spelled exactly as shown (the name is used in
-the output file names). Always list the tools you want: `"all"` also selects methods
+the output file names). Most names are the package name; `SPA` is short for
+SigProfilerAssignment. Always list the tools you want: `"all"` also selects methods
 that are still in development and not yet released.
 
 | `tools_to_run` | Package | How it fits | Settings (`tool_overrides`) |
@@ -160,16 +162,16 @@ The most used settings are below. The
 ```yaml
 tools_to_run: ["MutationalPatterns", "SPA", "MuSiCal"]
 
-data_types: ["realsim"]          # "realsim", "custom", "real"
+data_types: ["synth_realistic"]          # "synth_realistic", "synth_custom", "real"
 relevance_modes: ["standard"]
 
 cancer_types: ["Head-SCC"]       # tissue profiles in cosmic_tissue_data/
 num_muts: [1000, 10000]          # mutations per sample; one run per value
 num_samples: 30                  # different signature mixes per tissue
-num_realizations: 1              # random draws of each mix
+num_realizations: 1              # repeats of the dataset with new random mutations
 
-out_of_reference_sigs: ["SBS86", "SBS90", "SBS92"]   # hidden from the tools
-out_of_reference_weights: [0.1]  # one hidden signature per value, with that share of mutations
+out_of_reference_sigs: ["SBS86", "SBS90", "SBS92"]   # unknown signatures: not given to the tools
+out_of_reference_weights: [0.1]  # one unknown signature per value, with that share of mutations
 
 output_dir: "results_my_run"
 log_dir: "logs_my_run"
@@ -180,21 +182,31 @@ random_seed: 0
 
 | `data_types` | Source | Known answer? |
 |---|---|---|
-| `realsim` | Simulated from COSMIC signature activity in real tumours of each `cancer_types` tissue | Yes |
-| `custom` | Simulated from your own table of signature mixes (`custom_datasets`) | Yes |
+| `synth_realistic` | Realistic simulations: each sample copies the signature mix of a real tumour (PCAWG for WGS, TCGA for WES) of a `cancer_types` tissue, then mutations are drawn at random from that mix | Yes |
+| `synth_custom` | Simulated from your own table of signature mixes (`custom_datasets`) | Yes |
 | `real` | Real samples: PCAWG genomes or your own catalog (`real_datasets`) | No: tools compared with each other |
 
-You can combine several data types in one config. Each gets its own report.
+Each data type gets its own report. The [guide](docs/guide.md#where-the-samples-come-from)
+explains step by step how `synth_realistic` samples are made.
 
 **`num_samples` vs. `num_realizations`.** `num_samples` sets how many *different* signature
-mixes are drawn. `num_realizations` draws the mutations of the *same* mixes again. Use
-more realizations to tell a tool's real errors from bad luck in the random draw, which
-matters most when samples have few mutations.
+mixes are used. `num_realizations` repeats the whole dataset: each repeat keeps the same
+mixes (the same known answer) and draws new random mutations, and is scored on its own.
+Use more realizations to tell a tool's real errors from bad luck, which matters most when
+samples have few mutations.
 
-**Unknown signatures.** Each value in `out_of_reference_weights` adds one signature from
-`out_of_reference_sigs` to every sample, with that share of its mutations. `[0.1, 0.1]`
-adds two, 10% each. These signatures are removed from the reference the tools fit
-against. To compare levels, run one config per level with different `output_dir` values.
+**Reference signatures.** All tools fit against the same list: the COSMIC signatures in
+`cosmic_signatures.base_file` (v3.3.1 in the scenarios), minus any unknown signatures.
+COSMIC files up to v3.6 are in `input/`; see the
+[configuration reference](docs/configuration.md#files-and-folders) for which version
+fits which data type.
+
+**Unknown signatures.** To test how tools cope with signatures they don't know, the
+signatures in `out_of_reference_sigs` are taken out of the tools' list but still used to
+simulate samples. Each value in `out_of_reference_weights` adds one of them to every
+sample, with that share of its mutations: `[0.1, 0.1]` adds two, 10% each. One run tests
+one level; to compare 0%, 10% and 20%, run three copies of the config with their own
+`output_dir`. The [guide](docs/guide.md#unknown-signatures) explains this in detail.
 
 ---
 
@@ -202,18 +214,29 @@ against. To compare levels, run one config per level with different `output_dir`
 
 ```
 {output_dir}/
-├── {data_type}/{tissue}/standard/{num_muts}/rep_{n}/
-│   └── {tool}_contribution.dat                  # mutations assigned to each signature, per sample
-├── generated_data/                              # simulated catalogs and their known answers
-├── evaluation/                                  # scores per tool and run
-├── benchmarks/                                  # run time and memory per job
-├── all_evaluation_metrics.tsv                   # all scores in one table
-├── all_per_sample_metrics.tsv                   # scores per sample
-├── all_tool_benchmarks.tsv                      # all run times and memory use
-├── sigfitbench_report_realistic_simulations.html   # report for "realsim"
-├── sigfitbench_report_synthetic.html               # report for "custom"
-└── sigfitbench_report_real_samples.html            # report for "real"
+├── report_synth_realistic.html            ← open this (one report per data type)
+├── summary/                               one table each, all runs together
+│   ├── evaluation_metrics.tsv             one row per tool, tissue, mutation count, repeat
+│   ├── per_sample_metrics.tsv             one row per tool and sample
+│   └── tool_benchmarks.tsv                run time (seconds) and peak memory (max_rss_mb)
+├── runs/{data_type}/{tissue}/{N}_mutations/
+│   ├── samples/counts_rep{r}.dat          mutation counts the tools fit
+│   ├── samples/known_answer_rep{r}.dat    true signature mix of each sample
+│   ├── fits/{tool}_rep{r}.dat             what each tool found: mutations per signature and sample
+│   ├── scores/{tool}_rep{r}.tsv           scores of each sample
+│   └── benchmarks/{tool}_rep{r}.tsv       run time and memory
+└── internal/                              files the workflow needs, rarely opened
 ```
+
+Everything about one run is in one folder: to see why a tool scored badly for Head-SCC at
+1,000 mutations, compare `samples/known_answer_rep0.dat` with `fits/<tool>_rep0.dat` in
+`runs/synth_realistic/Head-SCC/1000_mutations/`. `{r}` is the repeat (`num_realizations`),
+starting at 0. For `synth_custom` data, the dataset name takes the place of the tissue.
+For `real` data, the folder is `runs/real/{tissue}/all_mutations/`, since real samples
+keep their own mutation counts, and the repeat is always 0.
+
+Logs follow the same folders under `{log_dir}`, e.g.
+`{log_dir}/runs/synth_realistic/Head-SCC/1000_mutations/SPA_rep0.stderr.log`.
 
 | Score | Range | Better | Meaning |
 |---|---|---|---|
@@ -258,10 +281,10 @@ snakemake --profile profiles/graphs --configfile config/scenarios/quick_test.yam
 
 ## Troubleshooting
 
-**A tool failed.** The run continues; the tool's result file starts with
-`# TOOL FAILED:` and the last error line. The full log is in
-`{log_dir}/{data_type}/{tissue}/standard/{num_muts}/rep_{n}/{tool}_stderr.log`, with the
-tool name in lower case (e.g. `musical_stderr.log`).
+**A tool failed.** The run continues; the tool's result file
+(`runs/.../fits/{tool}_rep{r}.dat`) starts with `# TOOL FAILED:` and the last error line.
+The full log is in the same run folder under `{log_dir}`, e.g.
+`{log_dir}/runs/synth_realistic/Head-SCC/1000_mutations/MuSiCal_rep0.stderr.log`.
 
 **A tool environment is broken.** Delete it and rebuild only the environments:
 

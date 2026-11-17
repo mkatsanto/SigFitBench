@@ -17,18 +17,70 @@ To make your own, copy the closest scenario, give it a new `output_dir` and `log
 and change the settings described below. Every scenario has the same
 "Shared settings" block at the end; you rarely need to change it.
 
-| Scenario | Known answer? | Time on a laptop |
-|---|---|---|
-| [Quick test](#quick-test) | Yes | minutes |
-| [Unknown signatures](#unknown-signatures) | Yes | about an hour |
-| [Mutation burden](#mutation-burden) | Yes | about an hour |
-| [Custom mixtures](#custom-mixtures) | Yes | minutes |
-| [Own catalog](#own-catalog) | No | minutes |
-| [Real PCAWG](#real-pcawg) | No | minutes |
-| [Full benchmark](#full-benchmark) | Yes | days: use a cluster |
+Tools are named in the configs as in the
+[tool table](https://github.com/mkatsanto/SigFitBench#fitting-tools). Most names are the
+package name. `SPA` is short for SigProfilerAssignment, and `SPA_low` is the same tool
+with a lower removal penalty, so it keeps more signatures.
+
+| Scenario | Data type | Known answer? | Time on a laptop |
+|---|---|---|---|
+| [Quick test](#quick-test) | `synth_realistic` | Yes | minutes |
+| [Mutation burden](#mutation-burden) | `synth_realistic` | Yes | about an hour |
+| [Custom mixtures](#custom-mixtures) | `synth_custom` | Yes | minutes |
+| [Own catalog](#own-catalog) | `real` | No | minutes |
+| [Real PCAWG](#real-pcawg) | `real` | No | minutes |
+| [Full benchmark](#full-benchmark) | `synth_realistic` | Yes | days: use a cluster |
+| [Unknown signatures](#unknown-signatures) | `synth_realistic` | Yes | about an hour |
 
 Times are after the tool environments exist. The first run of any scenario also builds
 them (30–60 minutes).
+
+---
+
+## Where the samples come from
+
+The `data_types` setting chooses the source of the mutation catalogs. Each data type
+gets its own report.
+
+| `data_types` | Samples | Known answer? | Report |
+|---|---|---|---|
+| `synth_realistic` | Simulated, with signature mixes taken from real tumours of a tissue | Yes | `report_synth_realistic.html` |
+| `synth_custom` | Simulated, with signature mixes from your own table | Yes | `report_synth_custom.html` |
+| `real` | Real samples: PCAWG or your own catalog | No: tools are compared with each other | `report_real.html` |
+
+### `synth_realistic`: realistic simulations
+
+Most scenarios use `synth_realistic`. Its samples look like real tumours of the tissues in
+`cancer_types` because their signature mixes come from real tumours of that tissue.
+
+`cosmic_tissue_data/` holds, for each tissue, the signature activity COSMIC found in each
+tumour: PCAWG genomes for `WGS` (57 head and neck tumours, 695 breast tumours, …) or
+TCGA exomes for `WES`. For each simulated sample, SigFitBench:
+
+1. **Picks a tumour** of that tissue at random. Different samples can pick the same
+   tumour, so `num_samples` can be larger than the number of tumours.
+2. **Takes its signature mix**, scaled to `num_muts` mutations. Signatures that would
+   get fewer than 10 mutations are dropped, because they could not be found in a
+   sample that small. This is why a sample's mix can lose its smallest signatures at
+   low mutation counts.
+3. **Adds unknown signatures** if `out_of_reference_weights` is set (see
+   [Unknown signatures](#unknown-signatures)). The other signatures shrink to make room.
+4. **Draws the mutations**: `num_muts` mutations spread over the 96 mutation types
+   according to the mix. With `num_realizations` above 1, this step is repeated for the
+   whole dataset: each repeat keeps the same mixes and draws new random mutations.
+
+The mix of each sample is saved as the known answer that every tool is scored against.
+Sample `S0` always picks the same tumour for a given `random_seed`, whatever `num_muts`
+is. Its known answer can still differ between `num_muts` values, because of step 2: at
+100 mutations, samples have about 3 signatures on average; at 50,000, about 5.
+
+The tissue profiles use COSMIC v3.3.1 signature names (`SBS22`, `SBS40`), so
+`synth_realistic` runs need `cosmic_signatures.base_file` set to v3.3.1. Newer versions
+split these signatures into several (`SBS40a`, `SBS40b`, …).
+
+Use `synth_custom` instead when you want to choose the mixes yourself
+([Custom mixtures](#custom-mixtures)), and `real` to fit samples that were not simulated
+([Own catalog](#own-catalog)).
 
 ---
 
@@ -38,56 +90,14 @@ them (30–60 minutes).
 
 **Question:** does the installation work?
 
-Three fast tools (`MutationalPatterns`, `deconstructSigs`, `SPA`), one tissue
-(`Head-SCC`), three samples, 1,000 and 10,000 mutations. No unknown signatures.
+Three fast tools (`MutationalPatterns`, `SPA`, `MuSiCal`), one tissue (`Head-SCC`), three
+samples, 1,000 and 10,000 mutations. No unknown signatures.
 
-**Check:** `results_quick_test/sigfitbench_report_realistic_simulations.html` opens and
+**Check:** `results_quick_test/report_synth_realistic.html` opens and
 shows three tools. If a tool is missing, see its log in `logs_quick_test/`.
 
 **Next:** add the tools you want to compare to `tools_to_run` and run it again. Only
 the new tools run; finished results are reused.
-
----
-
-## Unknown signatures
-
-**Config:** [`unknown_signatures.yaml`](https://github.com/mkatsanto/SigFitBench/blob/main/config/scenarios/unknown_signatures.yaml)
-
-**Question:** what happens when a tumour carries a signature the tools don't know about?
-
-COSMIC adds signatures with nearly every release, and a tumour can carry a process that
-is not in any catalogue. A tool given only known signatures has to put those mutations
-somewhere. Most give them to whichever known signatures look closest, which adds false
-signatures and distorts the weights of the real ones.
-
-This scenario simulates that. The signatures in `out_of_reference_sigs` are removed from
-the reference the tools fit against. Each sample then gets one of them, picked at random,
-carrying 20% of its mutations.
-
-**Settings that matter:**
-
-```yaml
-out_of_reference_sigs: ["SBS10c", "SBS10d", "SBS86", ...]   # signatures the tools never see
-out_of_reference_weights: [0.2]   # one hidden signature per sample, 20% of its mutations
-```
-
-Each value in `out_of_reference_weights` adds **one** hidden signature to every sample:
-
-| `out_of_reference_weights` | Hidden signatures per sample | Share of mutations hidden |
-|---|---|---|
-| `[0]` | none | 0% (baseline) |
-| `[0.2]` | 1 | 20% |
-| `[0.1, 0.1]` | 2 | 20% |
-| `[0.1, 0.2]` | 2 | 30% |
-
-**Comparing levels:** this is not a list of levels to compare. To compare 0%, 10% and
-20%, make one copy of the config per level, each with its own `output_dir`, and run them
-one after the other.
-
-**Read the results:** compare precision with the 0% baseline. A tool whose precision
-drops a lot is filling the gap with signatures that are not there. In the report, the
-"Signature complexity vs. performance" section appears only for runs with hidden
-signatures.
 
 ---
 
@@ -98,23 +108,24 @@ signatures.
 **Question:** how does accuracy change from samples with few mutations (exomes, panels)
 to samples with many (whole genomes), and how much of the error is chance?
 
-One tissue, 100 to 50,000 mutations per sample, 20 signature mixes, each drawn three
-times.
+One tissue, 100 to 50,000 mutations per sample, 20 signature mixes, and 3 repeats of
+the dataset with new random mutations each time.
 
 **Settings that matter:**
 
 ```yaml
 num_muts: [100, 500, 2000, 10000, 50000]   # one run per value
 num_samples: 20          # 20 different signature mixes
-num_realizations: 3      # each mix drawn 3 times with fresh random counts
+num_realizations: 3      # 3 repeats: same mixes, new random mutations
 ```
 
 `num_samples` and `num_realizations` test different things:
 
 - More **samples** means more *different* tumours: a wider range of signature mixes.
-- More **realizations** means the *same* tumours drawn again. The known answer stays the
-  same; only chance changes. If a tool's score varies a lot between realizations, its
-  errors at that burden are mostly bad luck, not a weakness of the method.
+- More **realizations** means the *same* samples repeated with new random mutations. The
+  known answer stays the same; only chance changes. If a tool's score varies a lot
+  between realizations, its errors at that burden are mostly bad luck, not a weakness
+  of the method.
 
 **Read the results:** the "Tool comparison" plots show each score against mutations per
 sample. Look for where each tool's error levels off: below that burden, the data cannot
@@ -147,30 +158,31 @@ with_unknown   0.3    0      0.3    0      0.1    0.1    0.2
 **Settings that matter:**
 
 ```yaml
-data_types: ["custom"]
+data_types: ["synth_custom"]
 custom_datasets:
   ExampleMix:                                    # name used in result folders and the report
     combinations_file: "config/scenarios/custom_mixtures.tsv"
-    out_of_reference_sigs: ["SBS90"]             # in the table, hidden from the tools
+    out_of_reference_sigs: ["SBS90"]             # in the table, but not given to the tools
 num_muts: [1000, 10000]                          # every row gets this many mutations
-num_realizations: 5                              # 5 random draws of each row
+num_realizations: 5                              # 5 repeats: same rows, new random mutations
 ```
 
 - `num_samples` is not used: the table sets the samples.
-- Hidden signatures for a custom table go **inside** its `custom_datasets` entry. The
-  top-level `out_of_reference_sigs` applies only to `realsim`.
+- Unknown signatures for a custom table go **inside** its `custom_datasets` entry. The
+  top-level `out_of_reference_sigs` applies only to `synth_realistic`.
 - You can list several tables under `custom_datasets`; each gets its own tab in the report.
-- `signature_file` (optional) uses another COSMIC version for this table. It is needed
-  when the table uses signatures that are only in newer versions (e.g. `SBS40a`,
-  `SBS96`, which are in v3.4 but not v3.3.1).
+- `signature_file` (optional) uses another COSMIC version for this table, both to
+  simulate and to fit. It is needed when the table uses signatures that are only in newer
+  versions: `SBS40a` or `SBS96` are in v3.4 and v3.6 but not v3.3.1, and `SBS22c` and
+  `SBS100`–`SBS113` are only in v3.6.
 
 **A larger example:** [`config/config_custom.yaml`](https://github.com/mkatsanto/SigFitBench/blob/main/config/config_custom.yaml)
 with the table [`config/custom.tsv`](https://github.com/mkatsanto/SigFitBench/blob/main/config/custom.tsv).
 It has 100 samples. Each one has SBS3 and SBS5 plus three other signatures, every
-signature at 20%. It is fitted against COSMIC v3.4 and runs together with a `realsim`
+signature at 20%. It is fitted against COSMIC v3.4 and runs together with a `synth_realistic`
 run on all 12 tissues.
 
-**Read the results:** `results_custom_mixtures/sigfitbench_report_synthetic.html`. The
+**Read the results:** `results_custom_mixtures/report_synth_custom.html`. The
 "Signature activity per sample" section compares the known mix of each row with what
 each tool found.
 
@@ -213,9 +225,9 @@ cosmic_signatures:
 ```
 
 `input/` has COSMIC files for GRCh37 and GRCh38. Use the one matching the genome your
-mutations were called on.
+mutations were called on. Real data can use any COSMIC version, including v3.6.
 
-**Read the results:** `results_own_catalog/sigfitbench_report_real_samples.html` shows,
+**Read the results:** `results_own_catalog/report_real.html` shows,
 per tissue, how similar each pair of tools' results is, which signatures each tool
 reports, and what share of mutations each tool leaves unassigned. See
 [Results and metrics](results.md#comparing-tools-without-a-known-answer).
@@ -258,8 +270,9 @@ simulation (`Breast`), so they have their own `cancer_types` list inside the
 **Question:** which tool should I use, for which tissue and mutation burden?
 
 All 14 tools, all 12 tissues, 100 to 200,000 mutations per sample, 100 samples, one
-hidden signature carrying 10% of mutations. This is the scale of the published
-comparison. It also lists every tool setting with its default value.
+unknown signature carrying 10% of mutations (see [Unknown signatures](#unknown-signatures)).
+This is the scale of the published comparison. It also lists every tool setting with
+its default value.
 
 Run it on a cluster:
 
@@ -274,19 +287,55 @@ Fill in your partition and account in `profiles/slurm-generic/config.yaml` first
 
 ---
 
-## Combining scenarios
+## Unknown signatures
 
-One config can hold several data types. For example, to score tools on simulated data
-and then see whether they agree on your own samples, in a single run:
+**Config:** [`unknown_signatures.yaml`](https://github.com/mkatsanto/SigFitBench/blob/main/config/scenarios/unknown_signatures.yaml)
+
+**Question:** what happens when a tumour carries a signature the tools don't know about?
+
+COSMIC adds signatures with nearly every release, and a tumour can carry a process that
+is not in any catalogue. A tool given only known signatures has to put those mutations
+somewhere. Most give them to whichever known signatures look closest, which adds false
+signatures and distorts the weights of the real ones.
+
+**What the tools fit against.** Every tool gets the same list of reference signatures:
+the COSMIC file in `cosmic_signatures.base_file` (COSMIC v3.3.1 in the scenarios). For a
+custom table with its own `signature_file`, that file is used instead.
+
+**How unknown signatures are made.** SigFitBench takes some COSMIC signatures out of
+the tools' list but still uses them to simulate the samples. The tools then meet
+mutations from signatures they have never seen. In the config these are called
+*out-of-reference* signatures, because they are left out of the reference:
+
+- `out_of_reference_sigs`: the signatures taken out of the tools' list. They are
+  removed from the list even when no sample uses them.
+- `out_of_reference_weights`: how many of them each sample gets, and what share of its
+  mutations they carry. Each sample gets its own randomly picked signatures from the list.
+
+**Settings that matter:**
 
 ```yaml
-data_types: ["realsim", "real"]
-cancer_types: ["Breast"]
-num_muts: [2000, 20000]
-num_samples: 20
-real_datasets:
-  MyCohort:
-    catalog: "input/my_cohort.tsv"
+out_of_reference_sigs: ["SBS10c", "SBS10d", "SBS86", ...]   # given to no tool
+out_of_reference_weights: [0.2]   # one unknown signature per sample, 20% of its mutations
 ```
 
-Each data type gets its own report in the same `output_dir`.
+Each value in `out_of_reference_weights` adds **one** unknown signature to every sample:
+
+| `out_of_reference_weights` | Unknown signatures per sample | Share of mutations from unknown signatures |
+|---|---|---|
+| `[0]` | none | 0% (baseline) |
+| `[0.2]` | 1 | 20% |
+| `[0.1, 0.1]` | 2 | 20% |
+| `[0.1, 0.2]` | 2 | 30% |
+
+**Testing several levels.** One run tests one level. `[0.1, 0.2]` does not mean "run
+10%, then 20%": it gives every sample two unknown signatures, 30% in total. To compare
+0%, 10% and 20%, make three copies of the config. Set `out_of_reference_weights` to `[0]`,
+`[0.1]` and `[0.2]`, give each copy its own `output_dir` and `log_dir`, and run them one
+after the other. Keep `out_of_reference_sigs` the same in all three, so the tools fit
+against the same list each time.
+
+**Read the results:** compare precision with the 0% baseline. A tool whose precision
+drops a lot is filling the gap with signatures that are not there. In the report, the
+"Signature complexity vs. performance" section appears only for runs with unknown
+signatures.
