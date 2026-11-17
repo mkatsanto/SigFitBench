@@ -1,9 +1,9 @@
 # ============================================================================
 # Scenario: mutation burden and sampling noise
 # How does accuracy change from low-burden samples (exomes, panels) to
-# high-burden ones (whole genomes)? Each sample mix is drawn three times
-# (num_realizations: 3), so differences caused by chance can be told apart
-# from real tool errors.
+# high-burden ones (whole genomes)? Three independent samples are generated
+# from each mix (num_realizations: 3), so differences caused by chance can be
+# told apart from real tool errors.
 #
 #   snakemake --profile profiles/local-conda --snakefile workflow/Snakefile \
 #     --configfile config/scenarios/mutation_burden.yaml
@@ -13,13 +13,13 @@
 
 tools_to_run: ["MutationalPatterns", "deconstructSigs", "SPA", "SPA_low", "MuSiCal", "sigminer"]
 
-data_types: ["realsim"]
+data_types: ["synth_realistic"]
 relevance_modes: ["standard"]
 
 cancer_types: ["Lung-AdenoCA"]
 num_muts: [100, 500, 2000, 10000, 50000]
 num_samples: 20                          # 20 different signature mixes
-num_realizations: 3                      # each mix drawn 3 times with fresh random counts
+num_realizations: 3                      # generate 3 independent samples for each mix
 
 out_of_reference_sigs: []
 out_of_reference_weights: [0]

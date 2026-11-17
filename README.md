@@ -84,12 +84,12 @@ to read the results.
 | Scenario | Config | Question it answers | Data type |
 |---|---|---|---|
 | Quick test | [`quick_test.yaml`](config/scenarios/quick_test.yaml) | Does the installation work? | `synth_realistic` |
-| Unknown signatures | [`unknown_signatures.yaml`](config/scenarios/unknown_signatures.yaml) | What happens when tumours carry signatures the tools don't know? | `synth_realistic` |
 | Mutation burden | [`mutation_burden.yaml`](config/scenarios/mutation_burden.yaml) | How does accuracy change from 100 to 50,000 mutations, and how much is chance? | `synth_realistic` |
 | Custom mixtures | [`custom_mixtures.yaml`](config/scenarios/custom_mixtures.yaml) | How do tools handle signature mixes I choose? | `synth_custom` |
 | Own catalog | [`own_catalog.yaml`](config/scenarios/own_catalog.yaml) | Do the tools agree on my samples? | `real` |
 | Real PCAWG | [`real_pcawg.yaml`](config/scenarios/real_pcawg.yaml) | Do the tools agree on real tumours? | `real` (PCAWG file not included) |
 | Full benchmark | [`full_benchmark.yaml`](config/scenarios/full_benchmark.yaml) | All tools, all tissues: for a cluster | `synth_realistic` |
+| Unknown signatures | [`unknown_signatures.yaml`](config/scenarios/unknown_signatures.yaml) | What happens when tumours carry signatures the tools don't know? | `synth_realistic` |
 
 `synth_realistic` and `synth_custom` are simulated, so they have a known answer and tools are scored
 against it. `real` data has none, so tools are compared with each other instead. See
@@ -100,7 +100,8 @@ against it. `real` data has none, so tools are compared with each other instead.
 ## Fitting tools
 
 Put any of these names in `tools_to_run`, spelled exactly as shown (the name is used in
-the output file names). Always list the tools you want: `"all"` also selects methods
+the output file names). Most names are the package name; `SPA` is short for
+SigProfilerAssignment. Always list the tools you want: `"all"` also selects methods
 that are still in development and not yet released.
 
 | `tools_to_run` | Package | How it fits | Settings (`tool_overrides`) |
@@ -167,10 +168,10 @@ relevance_modes: ["standard"]
 cancer_types: ["Head-SCC"]       # tissue profiles in cosmic_tissue_data/
 num_muts: [1000, 10000]          # mutations per sample; one run per value
 num_samples: 30                  # different signature mixes per tissue
-num_realizations: 1              # random draws of each mix
+num_realizations: 1              # independent samples generated from each mix
 
-out_of_reference_sigs: ["SBS86", "SBS90", "SBS92"]   # hidden from the tools
-out_of_reference_weights: [0.1]  # one hidden signature per value, with that share of mutations
+out_of_reference_sigs: ["SBS86", "SBS90", "SBS92"]   # unknown signatures: not given to the tools
+out_of_reference_weights: [0.1]  # one unknown signature per value, with that share of mutations
 
 output_dir: "results_my_run"
 log_dir: "logs_my_run"
@@ -189,14 +190,22 @@ Each data type gets its own report. The [guide](docs/guide.md#where-the-samples-
 explains step by step how `synth_realistic` samples are made.
 
 **`num_samples` vs. `num_realizations`.** `num_samples` sets how many *different* signature
-mixes are drawn. `num_realizations` draws the mutations of the *same* mixes again. Use
-more realizations to tell a tool's real errors from bad luck in the random draw, which
-matters most when samples have few mutations.
+mixes are used. `num_realizations` sets how many independent samples are generated from
+each mix: same known answer, different random mutations. Use more realizations to tell a
+tool's real errors from bad luck, which matters most when samples have few mutations.
 
-**Unknown signatures.** Each value in `out_of_reference_weights` adds one signature from
-`out_of_reference_sigs` to every sample, with that share of its mutations. `[0.1, 0.1]`
-adds two, 10% each. These signatures are removed from the reference the tools fit
-against. To compare levels, run one config per level with different `output_dir` values.
+**Reference signatures.** All tools fit against the same list: the COSMIC signatures in
+`cosmic_signatures.base_file` (v3.3.1 in the scenarios), minus any unknown signatures.
+COSMIC files up to v3.6 are in `input/`; see the
+[configuration reference](docs/configuration.md#files-and-folders) for which version
+fits which data type.
+
+**Unknown signatures.** To test how tools cope with signatures they don't know, the
+signatures in `out_of_reference_sigs` are taken out of the tools' list but still used to
+simulate samples. Each value in `out_of_reference_weights` adds one of them to every
+sample, with that share of its mutations: `[0.1, 0.1]` adds two, 10% each. One run tests
+one level; to compare 0%, 10% and 20%, run three copies of the config with their own
+`output_dir`. The [guide](docs/guide.md#unknown-signatures) explains this in detail.
 
 ---
 

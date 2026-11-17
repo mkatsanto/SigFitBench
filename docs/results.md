@@ -67,7 +67,7 @@ has:
 - **Tool comparison:** scores against mutations per sample, and precision against recall
 - **Performance distribution per tool:** spread of scores over samples
 - **Sample-by-sample comparison:** samples that are hard for every tool (with more than 10 samples per run)
-- **Signature complexity vs. performance:** only for runs with hidden signatures
+- **Signature complexity vs. performance:** only for runs with unknown signatures
 - **Signature activity per sample:** known vs. found signature weights, one sample at a time
 
 Methods, settings and score definitions are in the appendix at the end of the report.

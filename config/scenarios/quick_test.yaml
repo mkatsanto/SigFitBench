@@ -10,15 +10,15 @@
 # Guide: docs/guide.md#quick-test
 # ============================================================================
 
-tools_to_run: ["MutationalPatterns", "deconstructSigs", "SPA"]
+tools_to_run: ["MutationalPatterns", "SPA", "MuSiCaL"]   # SPA and SPA_low share one environment
 
-data_types: ["realsim"]
+data_types: ["synth_realistic"]
 relevance_modes: ["standard"]
 
 cancer_types: ["Head-SCC"]
 num_muts: [1000, 10000]                  # mutations per sample
 num_samples: 3                           # different signature mixes per tissue
-num_realizations: 1                      # repeated draws of the same mixes
+num_realizations: 1                      # independent samples made from each mix
 
 out_of_reference_sigs: []                # no unknown signatures in this test
 out_of_reference_weights: [0]

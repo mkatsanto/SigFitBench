@@ -3,7 +3,7 @@
 # Instead of drawing mixes from tissue data, every row of a table you write
 # becomes one sample. Use it to test cases you care about, e.g. two similar
 # signatures together, or one signature at a very low share.
-# SBS90 is used in the table but hidden from the tools, so the sample
+# SBS90 is used in the table but not given to the tools, so the sample
 # "with_unknown" also tests an unknown signature.
 #
 #   snakemake --profile profiles/local-conda --snakefile workflow/Snakefile \
@@ -14,19 +14,19 @@
 
 tools_to_run: ["MutationalPatterns", "deconstructSigs", "SPA", "MuSiCal"]
 
-data_types: ["custom"]
+data_types: ["synth_custom"]
 relevance_modes: ["standard"]
 
 custom_datasets:
   ExampleMix:                                         # name used in result folders
     combinations_file: "config/scenarios/custom_mixtures.tsv"   # rows = samples, columns = signatures
-    out_of_reference_sigs: ["SBS90"]                           # in the table, hidden from the tools
+    out_of_reference_sigs: ["SBS90"]                           # in the table, but not given to the tools
     # signature_file: "input/COSMIC_v3.4_SBS_GRCh38.txt"       # optional, defaults to cosmic_signatures.base_file
 
 num_muts: [1000, 10000]                  # every row gets this many mutations
-num_realizations: 5                      # 5 random draws of each row
+num_realizations: 5                      # generate 5 independent samples for each row
 
-out_of_reference_sigs: []                # only used by "realsim"; custom tables set their own above
+out_of_reference_sigs: []                # only used by "synth_realistic"; custom tables set their own above
 out_of_reference_weights: []
 
 random_seed: 0
