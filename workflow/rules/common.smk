@@ -10,15 +10,16 @@ This module provides helper functions for:
 
 import os
 import re
+import shlex
 import sys
 
 
 # ==============================================================================
 # DATA TYPES
-#   realsim - simulated from signature activity in real tumours (known answer)
-#   custom  - simulated from the user's own table of signature mixes (known answer)
-#   real    - real samples from real_datasets (no known answer: tools are compared
-#             with each other)
+#   synth_realistic - simulated from signature activity in real tumours (known answer)
+#   synth_custom    - simulated from the user's own table of signature mixes (known answer)
+#   real            - real samples from real_datasets (no known answer: tools are
+#                     compared with each other)
 # Computed once here so every included rule file can reference active_data_types.
 # custom and real have their own target blocks in rule all, since they don't use the
 # shared cancer_types list.
@@ -36,6 +37,17 @@ def _peek_catalog_header(catalog_path):
             if line and not line.startswith("#"):
                 return line
     return None
+
+
+def real_catalog_path(ds_name):
+    """The catalog of one real_datasets entry: its `catalog`, or, if it gives a `vcf_dir` instead, the catalog the workflow
+    builds from those VCFs (rule catalog_from_vcfs in vcf_input.smk)."""
+    ds = config.get("real_datasets", {}).get(ds_name, {}) or {}
+    if ds.get("catalog"):
+        return ds["catalog"]
+    if ds.get("vcf_dir"):
+        return os.path.join(config["output_dir"], "internal", "catalogs_from_vcfs", f"{ds_name}_sbs96.dat")
+    raise ValueError(f"real_datasets entry {ds_name!r} needs a 'catalog' or a 'vcf_dir'")
 
 
 _REAL_CANCER_TYPES_CACHE = {}
@@ -56,7 +68,7 @@ def get_real_cancer_types(ds_name):
     ds = config.get("real_datasets", {}).get(ds_name, {}) or {}
     result = list(ds.get("cancer_types") or [])
     if not result:
-        header = _peek_catalog_header(ds.get("catalog"))
+        header = _peek_catalog_header(real_catalog_path(ds_name))      # not there yet if built from VCFs: one group
         result = [ds_name]
         if header:
             delim = "\t" if "\t" in header else ("," if "," in header else None)
@@ -98,27 +110,43 @@ def resolve_real_dataset(cancer_type):
     )
 
 active_data_types = [
-    dt for dt in config.get("data_types", ["realsim"])
-    if dt not in ("custom", "real")
+    dt for dt in config.get("data_types", ["synth_realistic"])
+    if dt not in ("synth_custom", "real")
 ]
 
 if "real" in config.get("data_types", []) and not config.get("real_datasets"):
     logger.warning('data_types includes "real" but real_datasets is empty')
 
-# Whether this run has any data with a known answer (realsim/custom) vs. any without
+# Whether this run has any data with a known answer (synth_realistic/synth_custom) vs. any without
 # (real) — rule all uses these to request the right summary/report target(s) only,
 # instead of unconditionally requesting both (which would crash
 # compute_summary_metrics for a real-only run: get_eval_files() returns []
 # and its --input-files argument requires at least one file).
-_has_ground_truth_data = bool(active_data_types) or "custom" in config.get("data_types", [])
+_has_ground_truth_data = bool(active_data_types) or "synth_custom" in config.get("data_types", [])
 _has_no_ground_truth_data = "real" in config.get("data_types", [])
 
 # One HTML report per data type with known answers: file name and title for each
 REPORTS = {
-    "realsim": ("realistic_simulations", "Realistic simulations"),
-    "custom": ("synthetic", "Synthetic"),
+    "synth_realistic": ("synth_realistic", "Realistic simulations"),
+    "synth_custom": ("synth_custom", "Custom simulations"),
 }
-report_names = [REPORTS[dt][0] for dt in REPORTS if dt in config.get("data_types", ["realsim"])]
+report_names = [REPORTS[dt][0] for dt in REPORTS if dt in config.get("data_types", ["synth_realistic"])]
+
+
+def report_file(name):
+    """One of the HTML reports, e.g. report_synth_realistic.html."""
+    return os.path.join(config["output_dir"], f"report_{name}.html")
+
+
+def summary_file(table):
+    """One of the tables in summary/ that collect every run, e.g. evaluation_metrics.tsv."""
+    return os.path.join(config["output_dir"], "summary", f"{table}.tsv")
+
+
+def summary_log(name):
+    """Log of a step that builds a summary table or a report."""
+    base = os.path.join(config["log_dir"], "summary", name)
+    return {"stderr": f"{base}.stderr.log", "stdout": f"{base}.stdout.log"}
 report_data_type = {name: dt for dt, (name, _) in REPORTS.items()}
 
 
@@ -136,35 +164,20 @@ def get_agreement_tools():
 def get_agreement_files(suffix="tool_agreement"):
     """Per-cell TSVs (tool_agreement or signature_calls — both outputs of the same
     evaluate_tool_agreement rule) for every active no-ground-truth dataset."""
-    eval_dir = os.path.join(config['output_dir'], "evaluation")
-    relevance_modes = config.get("relevance_modes", ["standard"])
     if "real" not in config.get("data_types", []):
         return []
     return expand(
-        os.path.join(eval_dir, f"real_{{cancer_type}}_none_{{relevance}}_{suffix}.tsv"),
+        run_file("agreement", f"{suffix}.tsv"),
+        data_type="real",
         cancer_type=get_all_real_cancer_types(),
-        relevance=relevance_modes,
+        num_muts=REAL_NUM_MUTS,
+        relevance=relevance_endings(),
     )
 
 
 # ==============================================================================
 # CONFIGURATION INHERITANCE FUNCTIONS
 # ==============================================================================
-
-def _get_gen_name(tool_key):
-    """Name of the counts file a tool reads, e.g. deconstructSigs for data_for_deconstructSigs.dat."""
-    for format_data in _format_groups().values():
-        if tool_key.lower() in [t.lower() for t in format_data.get("tools", [])]:
-            base = os.path.basename(format_data.get("input_data_base", ""))
-            m = re.match(r"data_for_(.+)\.dat$", base)
-            return m.group(1) if m else tool_key
-    return tool_key
-
-
-def get_required_output_formats():
-    """Get list of output formats needed for selected tools"""
-    return sorted({_get_gen_name(t) for t in get_selected_tools()})
-
 
 def get_param(section, param, default_key=None):
     """Get parameter with inheritance: simulation[section] → config top-level → special mappings"""
@@ -195,22 +208,8 @@ def get_param(section, param, default_key=None):
 
 
 def get_tool_config(tool_name):
-    """Get tool config with inheritance: defaults → format_group → tool_overrides"""
+    """Settings of one tool: the config's defaults, then its tool_overrides entry."""
     tool_config = config.get("defaults", {}).copy()
-
-    for format_data in _format_groups().values():
-        if tool_name.lower() in [t.lower() for t in format_data.get("tools", [])]:
-            cs = format_data.get("cosmic_signatures", {}) or {}
-            tool_config.update({
-                "cosmic_signatures": {
-                    "standard": cs.get("standard", ""),
-                    "relevant": cs.get("relevant", "")
-                },
-                "input_data": format_data.get("input_data_base", ""),
-                **{k: v for k, v in format_data.items()
-                   if k not in ["tools", "cosmic_signatures", "input_data_base"]}
-            })
-            break
 
     for key, value in config.get("tool_overrides", {}).get(tool_name, {}).items():
         if isinstance(value, dict) and isinstance(tool_config.get(key), dict):
@@ -222,21 +221,68 @@ def get_tool_config(tool_name):
 
 
 # ==============================================================================
+# EXTRA TOOL ARGUMENTS (tool_overrides: <tool>: extra: in the config)
+# ==============================================================================
+
+def extra_values(tool, protected=()):
+    """Extra arguments for one tool, from tool_overrides.<tool>.extra in the config.
+
+    protected: the arguments the tool's rule sets itself (the data going in, the results
+    coming out, the number of cores). Setting them here would break the run or give results
+    in the wrong units, so the run stops instead.
+    """
+    values = get_tool_config(tool).get("extra") or {}
+    protected = set(protected) & set(values)
+    if protected:
+        raise ValueError(f"{tool}: the workflow sets {sorted(protected)} itself; remove them from the extra arguments")
+    return values
+
+
+def extra_params(tool, protected=()):
+    """For a rule's params. Adds nothing when no values are set, so that the job's params stay
+    the same and Snakemake has no reason to rerun it."""
+    values = extra_values(tool, protected)
+    return {"extra": values} if values else {}
+
+
+def _shell_text(words):
+    """Words to add to a shell command; empty if there are none, which leaves the command's text
+    the same, so Snakemake has no reason to rerun it."""
+    return "".join(" " + shlex.quote(str(w)).replace("{", "{{").replace("}", "}}") for w in words)
+
+
+def extra_flags(tool, protected=()):
+    """Extra arguments as command-line flags: `true` gives the flag alone, `false` leaves it out."""
+    words = []
+    for flag, value in extra_values(tool, protected).items():
+        if value is True:
+            words.append(flag)
+        elif value is not False:
+            words += [flag, value]
+    return _shell_text(words)
+
+
+def extra_name_values(tool, protected=()):
+    """Extra arguments as name=value words, for R scripts run from a shell command."""
+    return _shell_text(f"{name}={value}" for name, value in extra_values(tool, protected).items())
+
+
+# ==============================================================================
 # INPUT/OUTPUT PATH RESOLUTION
 # ==============================================================================
 
-# Counts file and signature catalogue each input format uses
-FORMAT_FILES = {
-    "tab_with_index": ("data/data_for_deconstructSigs.dat",
-                       "{output_dir}/cosmic_signatures/COSMIC_v3_SBS_GRCh38_tab_with_index.txt"),
-    "csv_no_index": ("data/data_for_MutationalPatterns.dat",
-                     "{output_dir}/cosmic_signatures/COSMIC_v3_SBS_GRCh38_tab_with_index.txt"),
-    "csv_with_index": ("data/data_for_sigfit.dat",
-                       "{output_dir}/cosmic_signatures/COSMIC_v3_SBS_GRCh38_csv_with_index.txt"),
-    "csv_quoted": ("data/data_for_sigLASSO.dat",
-                   "{output_dir}/cosmic_signatures/COSMIC_v3_SBS_GRCh38_csv_quoted.txt"),
-    "signature_tools": ("data/data_for_signature_tools.dat",
-                        "{output_dir}/cosmic_signatures/COSMIC_v3_SBS_GRCh38_tab_with_index.txt"),
+# Reference signatures the tools fit with (base_file minus the hidden signatures), one file
+# per format, e.g. internal/reference_signatures/tab_with_index.txt
+REFERENCE_DIR = os.path.join("internal", "reference_signatures")
+
+
+# Reference signature file each input format reads (every tool reads the same counts)
+REFERENCE_FORMAT = {
+    "tab_with_index": "tab_with_index",
+    "csv_no_index": "tab_with_index",
+    "csv_with_index": "csv_with_index",
+    "csv_quoted": "csv_quoted",
+    "signature_tools": "tab_with_index",
 }
 
 # Tools the workflow can run (name as in its result file -> input format).
@@ -244,33 +290,78 @@ FORMAT_FILES = {
 REGISTERED_TOOLS = {}
 
 
-def _format_groups():
-    """Tools grouped by input format: the config's tool_formats if it has one, otherwise
-    built from the tool rules."""
-    if config.get("tool_formats"):
-        return config["tool_formats"]
-    groups = {}
-    for tool, fmt in REGISTERED_TOOLS.items():
-        data_file, catalogue = FORMAT_FILES[fmt]
-        group = groups.setdefault(fmt, {"tools": [], "input_data_base": data_file,
-                                        "cosmic_signatures": {"standard": catalogue}})
-        group["tools"].append(tool)
-    return groups
+# ==============================================================================
+# RESULTS LAYOUT
+#   {output_dir}/report_<data type>.html          one report per data type
+#   {output_dir}/summary/<table>.tsv              one table each, all runs together
+#   {output_dir}/runs/<data type>/<tissue or dataset>/<N>_mutations/
+#       samples/counts_rep<r>.dat                 mutation counts the tools fit
+#       samples/known_answer_rep<r>.dat           true signature mix of each sample
+#       fits/<tool>_rep<r>.dat                    what each tool found
+#       fits/extra/<tool>_<part>_rep<r>.dat       other files some tools write
+#       scores/<tool>_rep<r>.tsv                  scores of each sample
+#       benchmarks/<tool>_rep<r>.tsv              run time and memory
+#       agreement/<table>.tsv                     tools compared with each other (real)
+#   {output_dir}/internal/                        files the workflow needs, rarely opened
+# Logs use the same runs/... folders under log_dir.
+# ==============================================================================
+
+# Folder ending for each relevance mode: nothing for the normal mode
+RELEVANCE_ENDING = {"standard": "", "relevant": "_relevant"}
+
+# Stands in for the mutation count of real samples, which keep their own counts
+REAL_NUM_MUTS = "all"
 
 
-# Folder of one fitting run: data type / sample set / signature set / mutations per sample /
-# replicate. Every tool result, log and benchmark path is built from this one template.
-RUN_DIR = os.path.join("{data_type}", "{cancer_type}", "{relevance}", "{num_muts}", "rep_{rep}")
+def relevance_endings():
+    """Folder endings of the relevance modes this run uses."""
+    return [RELEVANCE_ENDING[m] for m in config.get("relevance_modes", ["standard"])]
+
+
+def relevance_mode(ending):
+    """Relevance mode ("standard" or "relevant") of a folder ending."""
+    return "relevant" if ending == RELEVANCE_ENDING["relevant"] else "standard"
+
+
+# Folder of one run: data type / tissue or dataset / mutations per sample (+ relevance)
+RUN_DIR = os.path.join("runs", "{data_type}", "{cancer_type}", "{num_muts}_mutations{relevance}")
+# The samples are the same in every relevance mode, so they are kept in the normal folder
+SAMPLES_DIR = os.path.join("runs", "{data_type}", "{cancer_type}", "{num_muts}_mutations", "samples")
+
+
+def run_file(*parts):
+    """A file in one run's folder, e.g. run_file("scores", "{tool}_rep{rep}.tsv")."""
+    return os.path.join(config["output_dir"], RUN_DIR, *parts)
+
+
+def run_log(name):
+    """stderr and stdout logs of one step of one run."""
+    base = os.path.join(config["log_dir"], RUN_DIR, name)
+    return {"stderr": f"{base}.stderr.log", "stdout": f"{base}.stdout.log"}
+
+
+def samples_file(name, data_type="{data_type}"):
+    """Counts or known answer of one run, e.g. samples_file("counts_rep{rep}.dat")."""
+    return os.path.join(config["output_dir"], SAMPLES_DIR.replace("{data_type}", data_type), name)
+
+
+def samples_log(data_type, stream):
+    """Log of the step that makes one run's samples."""
+    return os.path.join(config["log_dir"], SAMPLES_DIR.replace("{data_type}", data_type),
+                        f"rep{{rep}}.{stream}.log")
 
 
 def tool_result(tool, name="contribution", input_format=None):
-    """Result file of one tool for one run, e.g. SPA_contribution.dat.
+    """Result file of one tool for one run, e.g. fits/SPA_rep0.dat. Other files a tool
+    writes (name other than "contribution") go to fits/extra/.
 
     Tool rules also pass the input format the tool reads, which registers the tool.
     """
     if input_format:
         REGISTERED_TOOLS[tool] = input_format
-    return os.path.join(config["output_dir"], RUN_DIR, f"{tool}_{name}.dat")
+    if name == "contribution":
+        return run_file("fits", f"{tool}_rep{{rep}}.dat")
+    return run_file("fits", "extra", f"{tool}_{name}_rep{{rep}}.dat")
 
 
 # Added to the shell command of command-line tools: if the tool fails, write
@@ -285,49 +376,19 @@ ON_TOOL_FAILURE = (
 
 def tool_logs(tool):
     """stderr and stdout log files of one tool for one run."""
-    base = os.path.join(config["log_dir"], RUN_DIR, tool.lower())
-    return {"stderr": f"{base}_stderr.log", "stdout": f"{base}_stdout.log"}
+    return run_log(f"{tool}_rep{{rep}}")
 
 
 def tool_benchmark(tool):
     """Run time and memory file of one tool for one run."""
-    return os.path.join(config["output_dir"], "benchmarks", RUN_DIR, f"{tool}_benchmark.tsv")
+    return run_file("benchmarks", f"{tool}_rep{{rep}}.tsv")
 
 
 def get_input_data(tool_key, wildcards):
-    """Return input data path based on data_type: realsim/custom/real/samples.
-
-    real uses the same {cancer_type}-w_0-{num_muts} naming as the simulated types (rep
-    fixed at 0), so downstream rules need no special-casing.
-    """
-    gen_name = _get_gen_name(tool_key)
-    dt = getattr(wildcards, 'data_type', None)
-
-    if dt == 'real':
-        return os.path.join(config["output_dir"], "generated_data", "real",
-                            f"counts_{wildcards.cancer_type}-w_0-{wildcards.num_muts}_{gen_name}.dat")
-
-    if dt in ('realsim', 'custom'):
-        return os.path.join(config["output_dir"], "generated_data", dt,
-                            f"counts_{wildcards.cancer_type}-w_{wildcards.rep}-{wildcards.num_muts}_{gen_name}.dat")
-
-    if dt == 'samples' and hasattr(wildcards, 'identifier'):
-        sample_dir = config.get("sample_input_dir", "input/samples")
-        for path in [f"{wildcards.identifier}_mutations.dat", f"{wildcards.identifier}_{gen_name}.dat"]:
-            full_path = os.path.join(sample_dir, path)
-            if os.path.exists(full_path):
-                return full_path
-        if "input_catalog" in config.get("samples", {}):
-            return config["samples"]["input_catalog"]
-
-    override = config.get("tool_overrides", {}).get(tool_key, {}).get("input_data")
-    if override:
-        return override
-
-    for format_info in _format_groups().values():
-        if tool_key.lower() in [t.lower() for t in format_info.get("tools", [])]:
-            return format_info.get("input_data_base") or []
-    return []
+    """Mutation counts a tool fits: the run's samples/counts_rep<r>.dat. Every tool reads
+    the same file (real samples have rep 0)."""
+    return samples_file(f"counts_rep{wildcards.rep}.dat").format(
+        data_type=wildcards.data_type, cancer_type=wildcards.cancer_type, num_muts=wildcards.num_muts)
 
 
 # ==============================================================================
@@ -336,59 +397,32 @@ def get_input_data(tool_key, wildcards):
 
 def _get_format_key(tool_name):
     """Input format of a tool, e.g. tab_with_index."""
-    for fmt_key, format_data in _format_groups().items():
-        if tool_name.lower() in [t.lower() for t in format_data.get("tools", [])]:
-            return fmt_key
+    for tool, fmt in REGISTERED_TOOLS.items():
+        if tool.lower() == tool_name.lower():
+            return fmt
     return None
 
 
 def signature_catalogue(data_type=None, dataset=None):
     """Signature catalogue to use: a custom dataset's signature_file, otherwise base_file."""
     base_file = config["cosmic_signatures"]["base_file"]
-    if data_type == "custom" and dataset:
+    if data_type == "synth_custom" and dataset:
         return config["custom_datasets"][dataset].get("signature_file", base_file)
     return base_file
 
 
 def get_cosmic_signatures(tool_name, relevance, data_type=None, num_muts=None, dataset=None):
-    """Signature file a tool fits with. Custom datasets get their own file."""
-    cs = get_tool_config(tool_name).get("cosmic_signatures", {}) or {}
-    base_path = cs.get("standard") or ""
+    """Reference signature file a tool fits with, in internal/reference_signatures/:
+    <format>.txt, or custom_<dataset>/<format>.txt for a custom dataset, which may use
+    its own catalogue. relevance is the mode or its folder ending."""
+    catalogue = REFERENCE_FORMAT.get(_get_format_key(tool_name), "tab_with_index") + ".txt"
+    reference_dir = os.path.join(config["output_dir"], REFERENCE_DIR)
 
-    if "{output_dir}" in base_path:
-        base_path = base_path.format(output_dir=config["output_dir"])
-    if base_path.startswith("results/"):
-        base_path = base_path.replace("results/", config["output_dir"] + "/", 1)
-
-    if data_type == "custom" and dataset:
-        # Same file name as the tool's standard file, with _CUSTOM_{dataset} added
-        if base_path.startswith(config["output_dir"]):
-            return base_path.replace(".txt", f"_CUSTOM_{dataset}.txt")
-        fmt_key = _get_format_key(tool_name)
-        stem = os.path.splitext(os.path.basename(base_path))[0]
-        return os.path.join(
-            config["output_dir"], "cosmic_signatures",
-            f"{stem}_{fmt_key}_CUSTOM_{dataset}.txt"
-        )
-
-    if relevance == "relevant":
-        if base_path.startswith(config["output_dir"]):
-            # Standard file is already in output dir: insert _RELEVANT before .txt
-            base_path = base_path.replace(".txt", "_RELEVANT.txt")
-        else:
-            # Standard file is a raw input (e.g. csv_no_index uses input/ directly):
-            # build the format-specific relevant path in output dir
-            fmt_key = _get_format_key(tool_name)
-            stem = os.path.splitext(os.path.basename(base_path))[0]
-            base_path = os.path.join(
-                config["output_dir"], "cosmic_signatures",
-                f"{stem}_{fmt_key}_RELEVANT.txt"
-            )
-
-        if data_type and num_muts:
-            base_path = base_path.replace("_RELEVANT.txt", f"_RELEVANT_{data_type}_{num_muts}.txt")
-
-    return base_path
+    if data_type == "synth_custom" and dataset:
+        return os.path.join(reference_dir, f"custom_{dataset}", catalogue)
+    if relevance in ("relevant", RELEVANCE_ENDING["relevant"]):
+        return os.path.join(reference_dir, f"relevant_{data_type}_{num_muts}", catalogue)
+    return os.path.join(reference_dir, catalogue)
 
 
 # ==============================================================================
@@ -402,8 +436,7 @@ def get_selected_tools():
                  else tools_config.get("selection", "all") if isinstance(tools_config, dict)
                  else "all")
 
-    all_tools = [t for fmt in _format_groups().values()
-                 for t in fmt.get("tools", [])]
+    all_tools = list(REGISTERED_TOOLS)
     all_tools_lower = {t.lower() for t in all_tools}
 
     if selection == "all":
@@ -434,7 +467,6 @@ def get_eval_files():
     real has no ground truth and is excluded from active_data_types entirely — it's
     evaluated separately via the tool-agreement pipeline, not this function.
     """
-    _eval_dir = os.path.join(config['output_dir'], "evaluation")
     _n_reps = config["num_realizations"]
 
     files = []
@@ -443,25 +475,25 @@ def get_eval_files():
             data_type=[dt],
             cancer_type=config["cancer_types"],
             num_muts=config["num_muts"],
-            relevance=config["relevance_modes"],
+            relevance=relevance_endings(),
             rep=range(_n_reps),
         )
         files += expand(
-            os.path.join(_eval_dir, "{data_type}_{cancer_type}_{num_muts}_{relevance}_{tool}_w{rep}_per_sample.tsv"),
+            run_file("scores", "{tool}_rep{rep}.tsv"),
             tool=get_selected_tools(),
             **_common
         )
     custom_datasets = config.get("custom_datasets", {})
-    if custom_datasets and "custom" in config.get("data_types", []):
+    if custom_datasets and "synth_custom" in config.get("data_types", []):
         _common_custom = dict(
-            data_type=["custom"],
+            data_type=["synth_custom"],
             cancer_type=list(custom_datasets.keys()),
             num_muts=config["num_muts"],
-            relevance=config["relevance_modes"],
+            relevance=relevance_endings(),
             rep=range(_n_reps),
         )
         files += expand(
-            os.path.join(_eval_dir, "{data_type}_{cancer_type}_{num_muts}_{relevance}_{tool}_w{rep}_per_sample.tsv"),
+            run_file("scores", "{tool}_rep{rep}.tsv"),
             tool=get_selected_tools(),
             **_common_custom
         )
@@ -478,12 +510,12 @@ def get_relevant_signature_file(wildcards):
     rel_sigs = config.get('relevant_signatures')
     if rel_sigs == "auto":
         return os.path.join(
-            config['output_dir'], "relevant_signatures",
+            config['output_dir'], "internal", "relevant_signatures",
             f"{wildcards.data_type}_{wildcards.num_muts}_active_signatures.txt"
         )
     elif isinstance(rel_sigs, list) and rel_sigs:
         manual_file = os.path.join(
-            config['output_dir'], "relevant_signatures",
+            config['output_dir'], "internal", "relevant_signatures",
             "manual_relevant_signatures.txt"
         )
         os.makedirs(os.path.dirname(manual_file), exist_ok=True)

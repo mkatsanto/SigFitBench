@@ -14,7 +14,7 @@ def _custom_weights_file(wildcards):
     return ds["combinations_file"]
 
 # Data generation rules
-rule create_realsim_catalog:
+rule create_synth_realistic_catalog:
     """Simulate samples for one tissue from signature activity in real tumours."""
     input:
         # Signature contributions file for specific cancer type
@@ -24,18 +24,13 @@ rule create_realsim_catalog:
         ),
         script=os.path.join(workflow.basedir, "..", "scripts", "MS_create_synthetic.py")
     output:
-        weights=os.path.join(config["output_dir"], "generated_data", "realsim", "weights_{cancer_type}-w_{rep}-{num_muts}.dat"),
-        # Dynamic outputs based on selected tools - at least one file must exist
-        data_files=expand(
-            os.path.join(config["output_dir"], "generated_data", "realsim", "counts_{{cancer_type}}-w_{{rep}}-{{num_muts}}_{format}.dat"),
-            format=get_required_output_formats()
-        )
+        known_answer=samples_file("known_answer_rep{rep}.dat", "synth_realistic"),
+        counts=samples_file("counts_rep{rep}.dat", "synth_realistic")
     params:
         num_samples=get_param("ms_create_synthetic", "num_samples"),
         input_sigs=get_param("ms_create_synthetic", "input_sigs"),
         epsilon=get_param("ms_create_synthetic", "epsilon"),
         random_seed=get_param("ms_create_synthetic", "random_seed", "rng_seed"),
-        output_formats=get_required_output_formats(),
         wgs_or_wes=get_param("ms_create_synthetic", "wgs_or_wes"),
         out_of_reference_weights=get_param("ms_create_synthetic", "out_of_reference_weights"),
         out_sigs=config["out_of_reference_sigs"]
@@ -45,21 +40,21 @@ rule create_realsim_catalog:
     resources:
         mem_mb=lambda wildcards, attempt: 2000 * attempt,
     log:
-        stderr=os.path.join(config["log_dir"], "create_realsim_catalog.{cancer_type}.{rep}.{num_muts}.stderr.log"),
-        stdout=os.path.join(config["log_dir"], "create_realsim_catalog.{cancer_type}.{rep}.{num_muts}.stdout.log")
+        stderr=samples_log("synth_realistic", "stderr"),
+        stdout=samples_log("synth_realistic", "stdout")
     shell:
         "(python {input.script:q}  \
         --num_samples {params.num_samples} \
         --num_muts {wildcards.num_muts} \
         --signature_contributions_file {input.signature_contributions_file:q} \
-        --output_dir \"$(dirname {output.weights:q})\" \
+        --counts_file {output.counts:q} \
+        --known_answer_file {output.known_answer:q} \
         --cancer_type {wildcards.cancer_type} \
         --realization {wildcards.rep} \
         --input_sigs {params.input_sigs:q} \
         --epsilon {params.epsilon} \
         --random_seed {params.random_seed} \
         --wgs_or_wes {params.wgs_or_wes} \
-        --output_formats {params.output_formats} \
         --out_of_reference_weights {params.out_of_reference_weights} \
         --out_sigs {params.out_sigs}) > {log.stdout:q} 2> {log.stderr:q}"
 
@@ -73,24 +68,18 @@ rule prepare_real_catalog:
     tissue to filter to) via resolve_real_dataset() — see get_real_cancer_types() in
     common.smk. Catalogs without that convention are fit as one group named after the
     dataset key. Samples keep their own mutation counts (no downsampling).
-    num_muts and rep are always "none"/0 in the output path: real samples have no
-    target mutation count or repeated draws, so both are fixed placeholders in the
-    shared output layout every tool rule uses (RUN_DIR in common.smk). Evaluated via
-    cross-tool agreement, since there's no ground truth to compare against.
+    Real samples have no target mutation count and are not drawn again, so their run
+    folder is all_mutations and their repeat is 0 (REAL_NUM_MUTS in common.smk).
+    Evaluated by comparing the tools with each other, since there is no known answer.
     """
     input:
-        catalog=lambda wildcards: config["real_datasets"][resolve_real_dataset(wildcards.cancer_type)[0]]["catalog"],
+        catalog=lambda wildcards: real_catalog_path(resolve_real_dataset(wildcards.cancer_type)[0]),
+        # mutation order to use: the same as the simulated samples and the reference signatures
+        order_like=config["cosmic_signatures"]["base_file"],
         script=os.path.join(workflow.basedir, "..", "scripts", "prepare_real_catalog.py")
     output:
-        data_files=expand(
-            os.path.join(config["output_dir"], "generated_data", "real",
-                         "counts_{{cancer_type}}-w_0-{{num_muts}}_{format}.dat"),
-            format=get_required_output_formats()
-        )
+        counts=samples_file("counts_rep{rep}.dat", "real")
     params:
-        output_formats=get_required_output_formats(),
-        matrix_order=config["matrix_order"],
-        num_muts_label=lambda wildcards: wildcards.num_muts,
         tissue_arg=lambda wildcards: (
             f"--tissue-prefix '{resolve_real_dataset(wildcards.cancer_type)[1]}'"
             if resolve_real_dataset(wildcards.cancer_type)[1] else ""
@@ -101,50 +90,44 @@ rule prepare_real_catalog:
     resources:
         mem_mb=lambda wildcards, attempt: 2000 * attempt,
     log:
-        stderr=os.path.join(config["log_dir"], "prepare_real_catalog.{cancer_type}.{num_muts}.stderr.log"),
-        stdout=os.path.join(config["log_dir"], "prepare_real_catalog.{cancer_type}.{num_muts}.stdout.log")
+        stderr=samples_log("real", "stderr"),
+        stdout=samples_log("real", "stdout")
     shell:
         "(python {input.script:q} \
         --input-catalog {input.catalog:q} \
         --dataset-name {wildcards.cancer_type} \
-        --output-dir {config[output_dir]:q}/generated_data/real \
-        --output-formats {params.output_formats} \
-        --matrix-order {params.matrix_order:q} \
-        --num-muts-label {params.num_muts_label} \
+        --counts-file {output.counts:q} \
+        --order-like {input.order_like:q} \
         {params.tissue_arg}) > {log.stdout:q} 2> {log.stderr:q}"
 
 
-rule create_custom_catalog:
+rule create_synth_custom_catalog:
     """Simulate a custom dataset: each row of its table becomes one sample with num_muts mutations."""
     input:
         script=os.path.join(workflow.basedir, "..", "scripts", "MS_create_custom.py"),
         helpers=os.path.join(workflow.basedir, "..", "scripts", "MS_create_synthetic.py"),
         weights_file=_custom_weights_file,
-        input_sigs=lambda wildcards: signature_catalogue("custom", wildcards.cancer_type)
+        input_sigs=lambda wildcards: signature_catalogue("synth_custom", wildcards.cancer_type)
     output:
-        weights=os.path.join(config["output_dir"], "generated_data", "custom", "weights_{cancer_type}-w_{rep}-{num_muts}.dat"),
-        data_files=expand(
-            os.path.join(config["output_dir"], "generated_data", "custom", "counts_{{cancer_type}}-w_{{rep}}-{{num_muts}}_{format}.dat"),
-            format=get_required_output_formats()
-        )
+        known_answer=samples_file("known_answer_rep{rep}.dat", "synth_custom"),
+        counts=samples_file("counts_rep{rep}.dat", "synth_custom")
     params:
-        random_seed=config.get("random_seed", 0),
-        output_formats=get_required_output_formats()
+        random_seed=config.get("random_seed", 0)
     conda:
         os.path.join(workflow.basedir, "envs", "python.yaml")
     threads: 1
     resources:
         mem_mb=lambda wildcards, attempt: 2000 * attempt,
     log:
-        stderr=os.path.join(config["log_dir"], "create_custom_catalog.{cancer_type}.{rep}.{num_muts}.stderr.log"),
-        stdout=os.path.join(config["log_dir"], "create_custom_catalog.{cancer_type}.{rep}.{num_muts}.stdout.log")
+        stderr=samples_log("synth_custom", "stderr"),
+        stdout=samples_log("synth_custom", "stdout")
     shell:
         "(python {input.script:q} \
         --weights_file {input.weights_file:q} \
         --num_muts {wildcards.num_muts} \
-        --output_dir \"$(dirname {output.weights:q})\" \
+        --counts_file {output.counts:q} \
+        --known_answer_file {output.known_answer:q} \
         --dataset {wildcards.cancer_type} \
         --realization {wildcards.rep} \
         --input_sigs {input.input_sigs:q} \
-        --random_seed {params.random_seed} \
-        --output_formats {params.output_formats}) > {log.stdout:q} 2> {log.stderr:q}"
+        --random_seed {params.random_seed}) > {log.stdout:q} 2> {log.stderr:q}"

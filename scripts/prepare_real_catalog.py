@@ -2,27 +2,21 @@
 """
 Prepare a Real Mutational Catalog for SigFitTest Workflow
 
-Subsets/reformats a catalog of real samples (no ground truth) into the standard
-per-tool formats used by the workflow. Outputs are drop-in replacements for the
-files produced by MS_create_synthetic.py, so all downstream tool rules work
-without modification. Evaluated via cross-tool agreement, since there's no ground
+Subsets/reformats a catalog of real samples (no ground truth) into the counts file
+every tool reads, in the same layout as the simulated samples from
+MS_create_synthetic.py, so all downstream tool rules work without modification. Evaluated via cross-tool agreement, since there's no ground
 truth.
 
 Inputs
 ------
 --input-catalog PATH      User catalog (TSV/CSV, contexts × samples).
---dataset-name NAME       Dataset name; used as the cancer_type wildcard.
---output-dir DIR          Directory to write output files into (created if absent).
---output-formats FMT...   List of format names required (e.g. MutationalPatterns
-                          deconstructSigs sigfit …).
---matrix-order PATH       File with the standard 96-context order (one context per
-                          line, no header).
---num-muts-label INT      Integer label used in output filenames (= wildcards.num_muts
-                          from the calling Snakemake rule).
-
-Outputs (written to --output-dir)
-----------------------------------
-counts_{dataset_name}-w_0-{num_muts_label}_{format}.dat   for each format
+--dataset-name NAME       Dataset name, for the log.
+--counts-file PATH        File to write the counts to (folders created if absent).
+--order-like PATH         Signature table (e.g. the COSMIC base_file) whose row order the
+                          counts follow, the same order as the simulated samples and the
+                          tools' reference signatures.
+--matrix-order PATH       Instead of --order-like: file with a 96-context order (one
+                          context per line, no header).
 
 Author: SigFitTest workflow
 """
@@ -50,20 +44,6 @@ def sanitize_sample_name(name: str) -> str:
     reading the same source file (which broke cross-tool agreement matching).
     """
     return re.sub(r"[^A-Za-z0-9._]", ".", name)
-
-
-# ---------------------------------------------------------------------------
-# Format constants — same groupings as MS_create_synthetic.py
-# ---------------------------------------------------------------------------
-
-# Formats where the index has NO special name (plain CSV/TSV)
-NO_INDEX_NAME_FORMATS = {"deconstructSigs", "sigfit", "sigLASSO"}
-
-# Formats where index.name must be set to 'Type'
-TYPE_INDEX_NAME_FORMATS = {
-    "MutationalPatterns", "mmsig", "YAPSA", "sigminer",
-    "signature_tools", "SigsPack"
-}
 
 
 def load_matrix_order(matrix_order_path: str) -> list:
@@ -130,29 +110,14 @@ def reindex_to_standard_order(catalog: pd.DataFrame, context_order: list) -> pd.
     return reindexed
 
 
-def save_catalog_formats(
-    catalog: pd.DataFrame,
-    output_dir: Path,
-    dataset_name: str,
-    num_muts_label: str,
-    output_formats: list,
-) -> None:
-    """Save catalog in each requested tool format (same logic as MS_create_synthetic.py)."""
-    output_dir.mkdir(parents=True, exist_ok=True)
-    prefix = f"counts_{dataset_name}-w_0-{num_muts_label}"
-
-    for fmt in output_formats:
-        out_path = output_dir / f"{prefix}_{fmt}.dat"
-        if fmt in NO_INDEX_NAME_FORMATS:
-            catalog.to_csv(out_path, sep="\t")
-        elif fmt in TYPE_INDEX_NAME_FORMATS:
-            cat_copy = catalog.copy()
-            cat_copy.index.name = "Type"
-            cat_copy.to_csv(out_path, sep="\t")
-        else:
-            warnings.warn(f"Unknown format '{fmt}'; writing as plain TSV.")
-            catalog.to_csv(out_path, sep="\t")
-        print(f"  Wrote {out_path}", file=sys.stderr)
+def save_counts(catalog: pd.DataFrame, counts_file: str) -> None:
+    """Write the catalog (mutation types x samples, first column "Type"), the same layout
+    the simulated samples have, so every tool reads it the same way."""
+    Path(counts_file).parent.mkdir(parents=True, exist_ok=True)
+    catalog = catalog.copy()
+    catalog.index.name = "Type"
+    catalog.to_csv(counts_file, sep="\t")
+    print(f"  Wrote {counts_file}", file=sys.stderr)
 
 
 def main() -> None:
@@ -168,23 +133,20 @@ def main() -> None:
     )
     parser.add_argument(
         "--dataset-name", required=True,
-        help="Dataset name; used as cancer_type wildcard in filenames.",
+        help="Dataset name, for the log.",
     )
     parser.add_argument(
-        "--output-dir", required=True,
-        help="Directory to write output files into.",
+        "--counts-file", required=True,
+        help="File to write the counts to.",
     )
-    parser.add_argument(
-        "--output-formats", nargs="+", required=True,
-        help="List of format names to generate (e.g. MutationalPatterns deconstructSigs).",
+    order = parser.add_mutually_exclusive_group(required=True)
+    order.add_argument(
+        "--order-like",
+        help="Signature table (e.g. the COSMIC base_file) whose row order the counts follow.",
     )
-    parser.add_argument(
-        "--matrix-order", required=True,
-        help="File with standard 96-context order (one context per line).",
-    )
-    parser.add_argument(
-        "--num-muts-label", required=True,
-        help="Integer label used in output filenames (= wildcards.num_muts).",
+    order.add_argument(
+        "--matrix-order",
+        help="File with a 96-context order (one context per line).",
     )
     parser.add_argument(
         "--tissue-prefix", default=None,
@@ -194,8 +156,6 @@ def main() -> None:
              "column in the catalog as one flat dataset.",
     )
     args = parser.parse_args()
-
-    output_dir = Path(args.output_dir)
 
     # ------------------------------------------------------------------
     # Load catalog
@@ -226,25 +186,27 @@ def main() -> None:
     # ------------------------------------------------------------------
     # Reindex to standard context order
     # ------------------------------------------------------------------
-    print(f"Loading matrix order from {args.matrix_order} ...", file=sys.stderr)
-    context_order = load_matrix_order(args.matrix_order)
+    if args.order_like:
+        # Same order as the simulated samples and the reference signatures, so every tool
+        # gets real samples in the order it gets in the benchmark
+        print(f"Using the mutation order of {args.order_like} ...", file=sys.stderr)
+        context_order = pd.read_csv(args.order_like, sep="\t", index_col=0).index.astype(str).str.strip().tolist()
+    else:
+        print(f"Loading matrix order from {args.matrix_order} ...", file=sys.stderr)
+        context_order = load_matrix_order(args.matrix_order)
     catalog = reindex_to_standard_order(catalog, context_order)
 
     # ------------------------------------------------------------------
     # Sanitize sample names (after tissue selection, which needs the raw
-    # "Tissue::SampleID" columns; before saving, so every tool format gets
-    # the same already-safe names)
+    # "Tissue::SampleID" columns; before saving, so every tool gets the same
+    # already-safe names)
     # ------------------------------------------------------------------
     catalog.columns = [sanitize_sample_name(c) for c in catalog.columns]
 
     # ------------------------------------------------------------------
-    # Save per-format count files
+    # Save the counts file
     # ------------------------------------------------------------------
-    print("Saving catalog in tool formats ...", file=sys.stderr)
-    save_catalog_formats(
-        catalog, output_dir, args.dataset_name,
-        args.num_muts_label, args.output_formats
-    )
+    save_counts(catalog, args.counts_file)
 
     # ------------------------------------------------------------------
     # Summary
@@ -252,9 +214,7 @@ def main() -> None:
     print(
         f"\nReal catalog preparation complete: "
         f"dataset={args.dataset_name}, "
-        f"num_muts_label={args.num_muts_label}, "
-        f"samples={catalog.shape[1]}, "
-        f"formats={args.output_formats}",
+        f"samples={catalog.shape[1]}",
         file=sys.stderr,
     )
 
