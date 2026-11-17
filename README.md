@@ -168,7 +168,7 @@ relevance_modes: ["standard"]
 cancer_types: ["Head-SCC"]       # tissue profiles in cosmic_tissue_data/
 num_muts: [1000, 10000]          # mutations per sample; one run per value
 num_samples: 30                  # different signature mixes per tissue
-num_realizations: 1              # independent samples generated from each mix
+num_realizations: 1              # repeats of the dataset with new random mutations
 
 out_of_reference_sigs: ["SBS86", "SBS90", "SBS92"]   # unknown signatures: not given to the tools
 out_of_reference_weights: [0.1]  # one unknown signature per value, with that share of mutations
@@ -190,9 +190,10 @@ Each data type gets its own report. The [guide](docs/guide.md#where-the-samples-
 explains step by step how `synth_realistic` samples are made.
 
 **`num_samples` vs. `num_realizations`.** `num_samples` sets how many *different* signature
-mixes are used. `num_realizations` sets how many independent samples are generated from
-each mix: same known answer, different random mutations. Use more realizations to tell a
-tool's real errors from bad luck, which matters most when samples have few mutations.
+mixes are used. `num_realizations` repeats the whole dataset: each repeat keeps the same
+mixes (the same known answer) and draws new random mutations, and is scored on its own.
+Use more realizations to tell a tool's real errors from bad luck, which matters most when
+samples have few mutations.
 
 **Reference signatures.** All tools fit against the same list: the COSMIC signatures in
 `cosmic_signatures.base_file` (v3.3.1 in the scenarios), minus any unknown signatures.

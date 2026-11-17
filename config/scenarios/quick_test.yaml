@@ -10,7 +10,7 @@
 # Guide: docs/guide.md#quick-test
 # ============================================================================
 
-tools_to_run: ["MutationalPatterns", "SPA", "MuSiCaL"]   # SPA and SPA_low share one environment
+tools_to_run: ["MutationalPatterns", "SPA", "MuSiCal"]
 
 data_types: ["synth_realistic"]
 relevance_modes: ["standard"]
@@ -18,7 +18,7 @@ relevance_modes: ["standard"]
 cancer_types: ["Head-SCC"]
 num_muts: [1000, 10000]                  # mutations per sample
 num_samples: 3                           # different signature mixes per tissue
-num_realizations: 1                      # independent samples made from each mix
+num_realizations: 1                      # repeats of the dataset with new random mutations
 
 out_of_reference_sigs: []                # no unknown signatures in this test
 out_of_reference_weights: [0]
@@ -52,3 +52,4 @@ tool_overrides:
     strict: true
   sigminer:
     method: "NNLS"
+

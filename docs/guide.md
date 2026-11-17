@@ -66,8 +66,8 @@ TCGA exomes for `WES`. For each simulated sample, SigFitBench:
 3. **Adds unknown signatures** if `out_of_reference_weights` is set (see
    [Unknown signatures](#unknown-signatures)). The other signatures shrink to make room.
 4. **Draws the mutations**: `num_muts` mutations spread over the 96 mutation types
-   according to the mix. With `num_realizations` above 1, this step is repeated to
-   generate several independent samples from the same mix.
+   according to the mix. With `num_realizations` above 1, this step is repeated for the
+   whole dataset: each repeat keeps the same mixes and draws new random mutations.
 
 The mix of each sample is saved as the known answer that every tool is scored against.
 Sample `S0` always picks the same tumour for a given `random_seed`, whatever `num_muts`
@@ -90,9 +90,8 @@ Use `synth_custom` instead when you want to choose the mixes yourself
 
 **Question:** does the installation work?
 
-Three fast tools (`MutationalPatterns`, `SPA`, `SPA_low`), one tissue (`Head-SCC`), three
-samples, 1,000 and 10,000 mutations. No unknown signatures. `SPA` and `SPA_low` share
-one environment, so only two tool environments are built.
+Three fast tools (`MutationalPatterns`, `SPA`, `MuSiCal`), one tissue (`Head-SCC`), three
+samples, 1,000 and 10,000 mutations. No unknown signatures.
 
 **Check:** `results_quick_test/report_synth_realistic.html` opens and
 shows three tools. If a tool is missing, see its log in `logs_quick_test/`.
@@ -109,22 +108,22 @@ the new tools run; finished results are reused.
 **Question:** how does accuracy change from samples with few mutations (exomes, panels)
 to samples with many (whole genomes), and how much of the error is chance?
 
-One tissue, 100 to 50,000 mutations per sample, 20 signature mixes, with 3 independent
-samples generated from each mix.
+One tissue, 100 to 50,000 mutations per sample, 20 signature mixes, and 3 repeats of
+the dataset with new random mutations each time.
 
 **Settings that matter:**
 
 ```yaml
 num_muts: [100, 500, 2000, 10000, 50000]   # one run per value
 num_samples: 20          # 20 different signature mixes
-num_realizations: 3      # generate 3 independent samples for each mix
+num_realizations: 3      # 3 repeats: same mixes, new random mutations
 ```
 
 `num_samples` and `num_realizations` test different things:
 
 - More **samples** means more *different* tumours: a wider range of signature mixes.
-- More **realizations** means more samples made from the *same* mixes. The known answer
-  stays the same; only the random mutations change. If a tool's score varies a lot
+- More **realizations** means the *same* samples repeated with new random mutations. The
+  known answer stays the same; only chance changes. If a tool's score varies a lot
   between realizations, its errors at that burden are mostly bad luck, not a weakness
   of the method.
 
@@ -165,7 +164,7 @@ custom_datasets:
     combinations_file: "config/scenarios/custom_mixtures.tsv"
     out_of_reference_sigs: ["SBS90"]             # in the table, but not given to the tools
 num_muts: [1000, 10000]                          # every row gets this many mutations
-num_realizations: 5                              # generate 5 independent samples for each row
+num_realizations: 5                              # 5 repeats: same rows, new random mutations
 ```
 
 - `num_samples` is not used: the table sets the samples.

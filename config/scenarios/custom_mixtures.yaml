@@ -24,7 +24,7 @@ custom_datasets:
     # signature_file: "input/COSMIC_v3.4_SBS_GRCh38.txt"       # optional, defaults to cosmic_signatures.base_file
 
 num_muts: [1000, 10000]                  # every row gets this many mutations
-num_realizations: 5                      # generate 5 independent samples for each row
+num_realizations: 5                      # 5 repeats: same rows, new random mutations
 
 out_of_reference_sigs: []                # only used by "synth_realistic"; custom tables set their own above
 out_of_reference_weights: []

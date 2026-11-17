@@ -23,7 +23,7 @@ not active.
 | `cancer_types` | `["Head-SCC", "Breast"]` | Tissues to simulate (`synth_realistic` only). Each needs `cosmic_tissue_data/signature_contributions_{WGS or WES}_{tissue}.dat`. |
 | `num_muts` **required** | `[1000, 10000]` | Mutations per sample. One run per value. Use `[]` when only `real` is active. |
 | `num_samples` | `30` | Different signature mixes per tissue (`synth_realistic` only). |
-| `num_realizations` | `1` | Independent samples generated from each signature mix. With `3`, every mix gives 3 samples that have the same known answer but different random mutations. |
+| `num_realizations` | `1` | Repeats of the whole simulated dataset. Each repeat keeps the same signature mixes (the same known answer) and draws new random mutations, and is fitted and scored on its own (`_rep0`, `_rep1`, …). With `num_samples: 20` and `num_realizations: 3`, you get 3 repeats of the same 20 samples, not 60 samples. |
 | `out_of_reference_sigs` **required** | `["SBS86", "SBS90"]` | Unknown signatures: taken out of the list the tools fit against, but still used to simulate samples (`synth_realistic`). Use `[]` for none. See [Unknown signatures](guide.md#unknown-signatures). |
 | `out_of_reference_weights` | `[0.1]` | One value per unknown signature added to each sample: its share of mutations. `[0]` or `[]` adds none. |
 | `random_seed` | `0` | Same seed, same simulated data. |
