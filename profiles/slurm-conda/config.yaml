@@ -19,7 +19,7 @@ default-resources:
   qos: "job_gratis"
   nodes: 1
   mem_mb: 1024
-  runtime: 60
+  runtime: 240
 
 set-resources:
   create_synth_realistic_catalog:
@@ -38,6 +38,8 @@ set-resources:
     runtime: 120
   spa:
     runtime: 120
+  spa_tree:
+    runtime: 240
   mutationalpatterns:
     runtime: 60
   deconstructsigs:
