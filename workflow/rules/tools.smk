@@ -2,7 +2,7 @@
 
 import os
 
-# Arguments the SigProfilerAssignment rules (SPA, SPA_low, FSPA, SPA_tree) set themselves
+# Arguments the SigProfilerAssignment rules (SPA, SPA_low, SPA_tree) set themselves
 SPA_ARGUMENTS = {"samples", "input_type", "output", "signature_database", "cpu"}
 
 # ==============================================================================
@@ -255,7 +255,7 @@ rule spa:
     conda:
         os.path.join(workflow.basedir, "envs", "spa.yaml")
     shadow:
-        "minimal"
+        "copy-minimal"
     threads: 1
     resources:
         mem_mb=lambda wildcards, attempt: 8000 * attempt,
@@ -278,7 +278,7 @@ rule spa_low:
     conda:
         os.path.join(workflow.basedir, "envs", "spa.yaml")
     shadow:
-        "minimal"
+        "copy-minimal"
     threads: 1
     resources:
         mem_mb=lambda wildcards, attempt: 4000 * attempt,
@@ -304,7 +304,7 @@ rule spa_tree:
     conda:
         os.path.join(workflow.basedir, "envs", "spa_tree.yaml")
     shadow:
-        "minimal"
+        "copy-minimal"
     threads: 1
     resources:
         mem_mb=lambda wildcards, attempt: 4000 * attempt,
@@ -334,7 +334,7 @@ rule msigact:
     conda:
         os.path.join(workflow.basedir, "envs", "msigact.yaml")
     shadow:
-        "minimal"
+        "copy-minimal"
     threads: get_tool_config("msigact").get("threads", 4)
     resources:
         mem_mb=lambda wildcards, attempt: 8000 * attempt,
@@ -361,7 +361,7 @@ rule starsigndna:
     conda:
         os.path.join(workflow.basedir, "envs", "starsigndna.yaml")
     shadow:
-        "minimal"
+        "copy-minimal"
     threads: 1
     resources:
         mem_mb=lambda wildcards, attempt: 4000 * attempt,
@@ -395,7 +395,7 @@ rule sigtrim:
     conda:
         os.path.join(workflow.basedir, "envs", "sigtrim.yaml")
     shadow:
-        "minimal"   # SigTrim also writes convergence_<sample>.csv files; keep them out of the results
+        "copy-minimal"   # SigTrim also writes convergence_<sample>.csv files; keep them out of the results
     threads: 1
     resources:
         mem_mb=lambda wildcards, attempt: 4000 * attempt,
