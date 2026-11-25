@@ -203,7 +203,7 @@ real_datasets:
     catalog: "input/cohort_a.tsv"            # 96 mutation types x samples
   CohortB:
     vcf_dir: "input/cohort_b_vcfs"           # one VCF per sample
-    reference_fasta: "input/ref/genome.fa"   # same genome build as the VCFs, with a .fai index
+    reference_fasta: "input/ref/genome.fa"   # same genome build as the VCFs
 ```
 
 `cosmic_signatures.base_file` must also match the genome build of your data. The mutation
@@ -215,11 +215,8 @@ otherwise the run stops and shows the difference.
 were called against, to read the bases on each side of every mutation. The genome is not
 included: download it as one FASTA file (e.g. GRCh37 or GRCh38 from
 [Ensembl](https://www.ensembl.org/info/data/ftp/) or [UCSC](https://hgdownload.soe.ucsc.edu/downloads.html)),
-unzip it, index it once, and give its path as `reference_fasta`:
-
-```bash
-samtools faidx input/ref/genome.fa      # writes input/ref/genome.fa.fai
-```
+unzip it, and give its path as `reference_fasta`. The workflow makes its index
+(`genome.fa.fai`, next to the genome) the first time it is needed.
 
 Some problems are not reported, they only give wrong counts, so check your VCFs first:
 
