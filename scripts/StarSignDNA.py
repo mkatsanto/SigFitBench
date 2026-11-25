@@ -30,30 +30,29 @@ def record_failure(exc_type, exc, tb):
 sys.excepthook = record_failure
 
 import subprocess
-import sys
 from pathlib import Path
 
 import pandas as pd
 
-sys.stdout = open(snakemake.log.stdout, "w")  # noqa: F821
-sys.stderr = open(snakemake.log.stderr, "w")  # noqa: F821
+sys.stdout = open(snakemake.log.stdout, "w")
+sys.stderr = open(snakemake.log.stderr, "w")
 
-N_ITERATIONS = snakemake.params.n_iterations  # noqa: F821
-DATA_TYPE = snakemake.params.data_type  # noqa: F821
+N_ITERATIONS = snakemake.params.n_iterations
+DATA_TYPE = snakemake.params.data_type
 
 # extra flags from the config (tool_overrides: starsigndna: extra): `true` gives the flag alone, `false` leaves it out
 extra_flags = []
-for flag, value in snakemake.params.get("extra", {}).items():  # noqa: F821
+for flag, value in snakemake.params.get("extra", {}).items():
     if value is True:
         extra_flags.append(flag)
     elif value is not False:
         extra_flags += [flag, str(value)]
 
-counts = pd.read_csv(snakemake.input.data, sep="\t", index_col=0)  # noqa: F821
-signatures = pd.read_csv(snakemake.input.signature_db, sep="\t", index_col=0)  # noqa: F821
+counts = pd.read_csv(snakemake.input.data, sep="\t", index_col=0)
+signatures = pd.read_csv(snakemake.input.signature_db, sep="\t", index_col=0)
 
-# Fit one sample at a time. StarSignDNA input: samples x contexts and signatures x contexts,
-# tab-separated
+# Fit one sample at a time. StarSignDNA wants one row per sample or signature and one column
+# per mutation type, tab-separated
 work = Path("starsigndna_work")
 work.mkdir(exist_ok=True)
 signature_file = work / "signatures.txt"
@@ -72,10 +71,10 @@ for i, s in enumerate(counts.columns):
     subprocess.run(cmd, check=True, stdout=sys.stdout, stderr=sys.stderr)
 
     # StarSignDNA names its output files <matrix>_<signatures>_<iterations>; for one sample
-    # it reports the median exposures over its bootstrap runs, as shares of the sample
+    # it reports the median contribution over its repeated fits, as shares of the sample
     run_name = f"{matrix_file.stem}_{signature_file.stem}_{N_ITERATIONS}"
     median = pd.read_csv(out_dir / f"StarSign_exposure_median_{run_name}.txt", sep="\t", index_col=0)
     shares = median.iloc[:, 0] if median.shape[1] == 1 else median.iloc[0]
     result.loc[shares.index, s] = shares * counts[s].sum()
 
-result.round(4).to_csv(snakemake.output.result)  # noqa: F821
+result.round(4).to_csv(snakemake.output.result)

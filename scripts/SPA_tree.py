@@ -40,7 +40,6 @@ for s in counts.columns:
         output=s,
         signature_database=snakemake.input.signature_db,
         make_plots=False,
-        sample_reconstruction_plots=False,
         initial_remove_penalty=snakemake.params.initial_remove_penalty,
         recovery_mode="beam_search",
     )

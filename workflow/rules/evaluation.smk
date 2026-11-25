@@ -150,8 +150,7 @@ rule compute_summary_metrics:
         > {log.stdout:q} 2> {log.stderr:q}"
 
 
-# Benchmark TSVs for the uniform (non-custom) data types, built the same way get_eval_files()
-# and rule all build their equivalent lists.
+# Run time and memory files of every tool run, for the realistic simulations
 _benchmark_files = expand(
     tool_benchmark("{tool}"),
     data_type=active_data_types,
@@ -161,11 +160,7 @@ _benchmark_files = expand(
     tool=get_selected_tools(),
     rep=range(config.get("num_realizations", 1)),
 )
-# "synth_custom" isn't part of active_data_types (dataset name stands in for cancer_type, no
-# num_muts/rep sweep shared with the others), so it's appended separately -- same reason
-# get_eval_files() and rule all's custom_tool_results handle it as its own list
-# comprehension. Without this, a custom-only run (data_types: ["synth_custom"]) leaves
-# active_data_types empty and this rule would get zero input files.
+# ...and for the custom simulations, whose runs are named after the dataset instead of a tissue
 if "synth_custom" in config.get("data_types", []):
     _benchmark_files += expand(
         tool_benchmark("{tool}"),
@@ -230,7 +225,7 @@ rule aggregate_bootstrap_quality:
 
 
 # ==============================================================================
-# CROSS-TOOL AGREEMENT (no-ground-truth data type: real)
+# CROSS-TOOL AGREEMENT (real samples: no known answer, so the tools are compared with each other)
 # ==============================================================================
 
 rule evaluate_tool_agreement:
@@ -423,6 +418,6 @@ rule create_html_report:
         os.path.join(workflow.basedir, "envs", "python.yaml")
     threads: 1
     resources:
-        mem_mb=lambda wildcards, attempt: 4000 * attempt,
+        mem_mb=lambda wildcards, attempt: 8000 * attempt,
     script:
         os.path.join(workflow.basedir, "..", "scripts", "create_html_report.py")

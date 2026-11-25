@@ -21,12 +21,11 @@ def record_failure(exc_type, exc, tb):
 
 sys.excepthook = record_failure
 
-import sys
 import musical
 import pandas as pd
 
-sys.stdout = open(snakemake.log.stdout, "w")  # noqa: F821
-sys.stderr = open(snakemake.log.stderr, "w")  # noqa: F821
+sys.stdout = open(snakemake.log.stdout, "w")
+sys.stderr = open(snakemake.log.stderr, "w")
 
 X = pd.read_csv(snakemake.input.data, index_col=0, sep='\t')
 W = pd.read_csv(snakemake.input.weights, sep='\t', index_col=0)
@@ -35,9 +34,9 @@ MP_index = pd.read_csv(snakemake.input.matrix_order, header=None).squeeze()
 W = W.reindex(MP_index)
 X = X.reindex(MP_index, axis=0)
 
-# extra arguments from the config (tool_overrides: musical: extra) are added or replace these
-arguments = {'method': 'likelihood_bidirectional', 'thresh': 0.001,
-             **snakemake.params.get('extra', {})}  # noqa: F821
+# MuSiCal's own defaults (likelihood_bidirectional, threshold 0.001), plus any extra
+# arguments from the config (tool_overrides: musical: extra)
+arguments = snakemake.params.get('extra', {})
 
 # Fit one sample at a time
 H = pd.concat(

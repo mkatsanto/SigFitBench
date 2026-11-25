@@ -1,10 +1,6 @@
-# Snakemake 8+ profile using the native slurm executor plugin.
-#
-# This is a cluster-agnostic starting point for running SigFitBench on any
-# SLURM cluster: copy this directory, then fill in the three commented-out
-# fields under default-resources for your own allocation. `profiles/slurm-conda`
-# is a worked example of this same profile filled in for UBELIX (University
-# of Bern HPC) — use it as a reference for what real values look like.
+# Profile for running SigFitBench on a SLURM cluster (Snakemake 8 or later).
+# Copy this folder and fill in the account settings under default-resources.
+# profiles/slurm-conda is the same profile filled in for UBELIX (University of Bern).
 executor: slurm
 jobs: 50
 latency-wait: 60
@@ -20,8 +16,8 @@ max-status-checks-per-second: 10
 scheduler: greedy
 
 default-resources:
-  # Uncomment and fill in whichever of these your cluster requires (check
-  # with `sinfo`/`sacctmgr show associations` or your cluster's docs):
+  # fill in the ones your cluster needs (see `sinfo`, `sacctmgr show associations`
+  # or your cluster's documentation):
   # slurm_partition: "your_partition"
   # slurm_account: "your_account"
   # qos: "your_qos"
@@ -29,10 +25,8 @@ default-resources:
   mem_mb: 1024
   runtime: 60
 
-# Per-rule runtime overrides (minutes) -- cluster-agnostic, tuned to each
-# rule's typical cost regardless of which SLURM cluster it runs on. Add a
-# `mem_mb:` here too for any rule that needs more/less than the 1024 MB
-# default above.
+# Time limit per step, in minutes. A step that needs more than 1024 MB can get
+# its own mem_mb here too.
 set-resources:
   create_synth_realistic_catalog:
     runtime: 15

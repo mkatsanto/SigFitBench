@@ -237,22 +237,10 @@ def evaluate_performance(
     # Align signature sets using helper function
     df_fitted, df_true = align_signature_dataframes(df_fitted, df_true, ref_signatures)
     
-    # Convert true weights from proportions to absolute counts
-    # Following SigFitTest: true_res = (contribs.T * muts).T
-    # This multiplies each column by the corresponding mutation count
+    # Known answer: shares of each sample -> numbers of mutations
     df_true = df_true * muts
     
-    # ========================================================================
-    # EVALUATION APPROACH: Keep all ground truth, exclude predicted non-fitting-catalog
-    # ========================================================================
-    # KEEP ALL signatures in ground truth (simulation catalog), including:
-    # - Known signatures (also in fitting catalog): counted as TP or FN
-    # - Unknown signatures (in simulation but NOT in fitting catalog): counted as FN if missed
-    #   * Unknowns are determined by: (signature in truth) AND (NOT in fitting catalog)
-    #   * e.g., SBS86 in simulation catalog but not in fitting catalog = unknown
-    #   * Methods are penalized for missing this signal (false negative)
-    # 
-    # Unknown signatures: in the simulation but not in the fitting reference.
+    # Unknown signatures: used in the simulation but left out of the reference the tools fit with.
     # They stay in the evaluation, so a tool that misses their mutations is penalised.
     unknown_in_truth_mask = ~df_true.index.isin(ref_signatures)
     if unknown_in_truth_mask.any():
@@ -281,7 +269,7 @@ def evaluate_performance(
     else:
         print(f"  All {len(df_fitted)} prediction signatures are in fitting catalog", file=sys.stderr)
     
-    # Re-align DataFrames after removing non-fitting-catalog predictions
+    # Put the tool's result and the known answer in the same signature order again
     df_fitted, df_true = align_signature_dataframes(df_fitted, df_true, ref_signatures)
     
     # Calculate total absolute error for each sample
@@ -304,8 +292,7 @@ def evaluate_performance(
         sample_wtot_FN = 0
         sample_num_FN = 0
         
-        # Count known vs unknown signatures in this sample's ground truth.
-        # "Unknown" = active in truth AND not in the fitting reference catalog.
+        # Count the signatures active in this sample, and how many of them are unknown
         num_active_sigs = 0
         num_unknown_active = 0
         unknown_weight = 0.0  # mutation count on unknown signatures (for theoretical_min_TAE)
@@ -416,14 +403,13 @@ def evaluate_performance(
         F_vals.append(Fsample)
         MCC_vals.append(MCCsample)
         
-        # Calculate theoretical maximum performance for this sample
-        # Best case: detect all known sigs, miss unknowns, no FP
+        # Best possible scores for this sample: every known signature found, every unknown
+        # one missed, no wrong signatures
         theoretical_max_recall = num_known_active / num_active_sigs if num_active_sigs > 0 else 1.0
         theoretical_max_precision = 1.0  # No FP in best case
         theoretical_max_f1 = 2 * theoretical_max_precision * theoretical_max_recall / (theoretical_max_precision + theoretical_max_recall) if (theoretical_max_precision + theoretical_max_recall) > 0 else 0.0
         
-        # MCC calculation for best case
-        # TP=num_known_active, FP=0, FN=num_unknown_active, TN=(total_ref_sigs - num_active_sigs)
+        # Best possible MCC, from the same best case
         total_ref_sigs = len(df_true.index)  # Total signatures in reference
         TN_theoretical = total_ref_sigs - num_active_sigs
         TP_theoretical = num_known_active
@@ -434,12 +420,9 @@ def evaluate_performance(
         denominator = np.sqrt((TP_theoretical + FP_theoretical) * (TP_theoretical + FN_theoretical) * (TN_theoretical + FP_theoretical) * (TN_theoretical + FN_theoretical))
         theoretical_max_mcc = numerator / denominator if denominator > 0 else 0.0
 
-        # Best case for TAE: known signatures fit perfectly (zero error), unknown
-        # signatures' mutations can't be placed anywhere (no catalog entry for them) and
-        # aren't misattributed onto known signatures either -- so the only irreducible
-        # error is the unknown signatures' own true weight. Same normalization as TAE
-        # itself (err.../(2*muts)). Zero when there are no unknowns (e.g. a custom
-        # dataset's own catalog, with nothing excluded from the fitting reference).
+        # Best possible TAE: every known signature is fitted exactly, and the mutations of
+        # unknown signatures (which no tool can name) are the only error left.
+        # Zero when the sample has no unknown signatures.
         theoretical_min_tae = unknown_weight / (2 * muts[sample]) if muts[sample] > 0 else 0.0
 
         # Store per-sample metrics
@@ -779,7 +762,7 @@ def main():
     
     # Determine mode: single tool or multiple tools
     if args.tool:
-        # Single-tool mode (backward compatibility)
+        # One tool
         tools = [args.tool]
         if len(args.tool_results) != 1:
             print("Error: Single-tool mode requires exactly one --tool-results file", file=sys.stderr)
@@ -788,7 +771,7 @@ def main():
             print("Error: Single-tool mode requires exactly one --reference-signatures file", file=sys.stderr)
             sys.exit(1)
     elif args.tools:
-        # Multi-tool mode
+        # Several tools
         tools = args.tools
         if len(args.tool_results) != len(tools):
             print(f"Error: Number of --tool-results ({len(args.tool_results)}) must match number of --tools ({len(tools)})", file=sys.stderr)

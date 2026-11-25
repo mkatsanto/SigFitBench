@@ -1,18 +1,11 @@
 # ==============================================================================
 # VCF INPUT (data_type == "samples")
 # ==============================================================================
-# Lets a raw .vcf/.vcf.gz stand in for a pre-computed counts_*.dat matrix.
-# get_input_data() (common.smk) already resolves data_type=="samples" to
-# "{sample_input_dir}/{identifier}_mutations.dat" *before* falling back to a
-# tool-specific format or a configured input_catalog -- this rule just
-# supplies that file whenever it doesn't already exist but a matching VCF
-# does, so every existing tool rule picks it up unchanged. No wiring of
-# `rule all` or the data_type=="samples" aggregation is included here --
-# that path is otherwise unbuilt in this workflow; target this rule's
-# output (or a downstream tool_contribution.dat under data_type=samples)
-# directly with `snakemake <path>` until/unless that aggregation exists.
+# Turns one VCF into a table of mutation counts. The tools do not read this file: to get it,
+# ask Snakemake for it by name, e.g. `snakemake input/samples/<sample>_mutations.dat`.
+# To fit real VCFs with the tools, use a real_datasets entry with vcf_dir (below).
 #
-# Config (see config/config_test.yaml for the wired example):
+# Config:
 #   samples:
 #     vcf_dir: "input/vcf"                     # {identifier}.vcf(.gz) files live here
 #     reference_fasta: "input/ref/genome.fa"   # needs a matching genome.fa.fai
@@ -26,11 +19,9 @@ SIGVCF = f"PYTHONPATH='{SIGVCF_SOURCE}' python -m sigvcf.cli"
 
 
 rule generate_matrix_from_vcf:
-    """Build an SBS96 mutation-count matrix directly from a VCF via SigVCF.
-
-    Streams the VCF and (indexed) FASTA rather than loading either into
-    memory, so this is safe to run on WGS-scale VCFs -- see ../../SigVCF.
-    """
+    """Count the mutations of one VCF per mutation type (96 types), with SigVCF.
+    SigVCF reads the VCF and the genome bit by bit, so it needs little memory even for
+    whole genomes."""
     input:
         vcf=lambda wc: _resolve_sample_vcf(wc.identifier),
         fasta=lambda wc: config["samples"]["reference_fasta"],
@@ -44,7 +35,7 @@ rule generate_matrix_from_vcf:
         os.path.join(workflow.basedir, "envs", "sigvcf.yaml")
     threads: 1
     resources:
-        mem_mb=lambda wildcards, attempt: 1000 * attempt,  # streaming: flat, low memory
+        mem_mb=lambda wildcards, attempt: 1000 * attempt,
     log:
         stderr=os.path.join(config["log_dir"], "generate_matrix_from_vcf.{identifier}.stderr.log"),
         stdout=os.path.join(config["log_dir"], "generate_matrix_from_vcf.{identifier}.stdout.log")
@@ -66,8 +57,7 @@ def _resolve_sample_vcf(identifier):
         candidate = os.path.join(vcf_dir, f"{identifier}{ext}")
         if os.path.exists(candidate):
             return candidate
-    # Let Snakemake raise its normal "missing input" error against the .vcf
-    # path rather than failing early here with a less specific message.
+    # neither exists: Snakemake then reports the .vcf as missing
     return os.path.join(vcf_dir, f"{identifier}.vcf")
 
 
@@ -101,8 +91,8 @@ def _dataset_fasta(dataset):
 
 if VCF_DATASETS:
     rule catalog_from_vcfs:
-        """One SBS96 catalog (mutation types x samples) from every VCF in a real_datasets entry's vcf_dir, via SigVCF.
-        Each VCF becomes one column, named after the file (without .vcf / .vcf.gz)."""
+        """Count the mutations per mutation type (96 types) of every VCF in a real dataset's
+        vcf_dir, with SigVCF. Each VCF becomes one sample, named after the file."""
         input:
             vcfs=lambda wc: _dataset_vcfs(wc.dataset),
             fasta=lambda wc: _dataset_fasta(wc.dataset),
@@ -118,7 +108,7 @@ if VCF_DATASETS:
             os.path.join(workflow.basedir, "envs", "sigvcf.yaml")
         threads: 1
         resources:
-            mem_mb=lambda wildcards, attempt: 2000 * attempt,   # streaming: flat, low memory
+            mem_mb=lambda wildcards, attempt: 2000 * attempt,
         log:
             stderr=os.path.join(config["log_dir"], "internal", "catalogs_from_vcfs", "{dataset}.stderr.log"),
             stdout=os.path.join(config["log_dir"], "internal", "catalogs_from_vcfs", "{dataset}.stdout.log")

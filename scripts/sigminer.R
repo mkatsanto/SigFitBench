@@ -19,7 +19,7 @@ context_file <- read.table(snakemake@input[["data"]], row.names=1, header=TRUE, 
 counts <- as.matrix(context_file)
 counts <- counts[rownames(cosmic), , drop = FALSE]
 
-# Fit one sample at a time. sig_fit returns the exposures directly: mutations per signature
+# Fit one sample at a time. sig_fit already gives mutations per signature
 fit <- matrix(0, nrow=ncol(cosmic), ncol=ncol(counts),
               dimnames=list(colnames(cosmic), colnames(counts)))
 for (s in colnames(counts)) {
