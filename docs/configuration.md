@@ -61,7 +61,29 @@ real_datasets:
 ```
 
 An entry with `vcf_dir` instead of `catalog` has its catalog built from the VCFs with
-[SigVCF](https://github.com/mkatsanto/SigVCF), one column per VCF.
+[SigVCF](https://github.com/mkatsanto/SigVCF), one column per VCF, named after the file.
+Every `.vcf` and `.vcf.gz` in the folder is used.
+
+`reference_fasta` is required for VCFs: the genome the VCFs were called against, as one
+unzipped FASTA file with a `.fai` index next to it (make it once with
+`samtools faidx genome.fa`). The genome is not included in SigFitBench; download it, e.g.
+from Ensembl (chromosomes named `1`, `2`, …) or UCSC (`chr1`, `chr2`, …), whichever naming
+your VCFs use.
+
+Some problems are not reported, they only give wrong counts, so check your VCFs first:
+
+| Requirement | If not met |
+|---|---|
+| One sample per VCF | The sample columns are not read: a VCF with several samples is counted as one sample |
+| Only the mutations you trust (e.g. `PASS`) | The `FILTER` column is not read: failed mutations are counted too |
+| Same chromosome names as `reference_fasta` (`chr1` vs `1`) | Mutations on chromosomes not in the genome are skipped |
+| Same genome build as `reference_fasta` | Mutations whose `REF` base does not match the genome are skipped |
+| Sorted by position | Neighbouring substitutions are not recognised, so counts are slightly off |
+
+Only single-base substitutions are counted. Indels are skipped, and so are substitutions
+next to each other (double-base substitutions). A record with several `ALT` alleles counts
+once per allele. `.vcf` and `.vcf.gz` both work; no index is needed. A sample left with no
+mutations stops the run.
 
 Each entry is one catalog. Columns named `Tissue::Sample` are split into one group per
 tissue; `cancer_types` keeps only the tissues listed. Catalogs without `::` in their

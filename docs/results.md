@@ -4,16 +4,24 @@
 
 ```
 {output_dir}/
-├── report_synth_realistic.html            ← open this (one report per data type)
+├── report_synth_realistic.html            ← open this: one report per data type
+├── report_synth_custom.html                 (only the ones for the data types you run)
+├── report_real.html
 ├── summary/                               one table each, all runs together
-│   ├── evaluation_metrics.tsv             one row per tool, tissue, mutation count, repeat
-│   ├── per_sample_metrics.tsv             one row per tool and sample
-│   └── tool_benchmarks.tsv                run time (seconds) and peak memory (max_rss_mb)
-├── runs/{data_type}/{tissue}/{N}_mutations/
+│   ├── evaluation_metrics.tsv             simulations: one row per tool, group, mutation count, repeat
+│   ├── per_sample_metrics.tsv             simulations: one row per tool and sample
+│   ├── tool_benchmarks.tsv                simulations: run time (seconds) and peak memory (max_rss_mb)
+│   ├── tool_agreement.tsv                 real data: how closely each pair of tools agrees
+│   ├── signature_calls.tsv                real data: which tools find each signature, in how many samples
+│   ├── signature_weights.tsv              real data: weight per signature, sample and tool
+│   └── sample_activity.tsv                real data: signatures found per sample and tool
+├── runs/{data_type}/{group}/{N}_mutations/
 │   ├── samples/counts_rep{r}.dat          mutation counts the tools fit
-│   ├── samples/known_answer_rep{r}.dat    true signature mix of each sample
+│   ├── samples/known_answer_rep{r}.dat    simulations: true signature mix of each sample
 │   ├── fits/{tool}_rep{r}.dat             what each tool found: mutations per signature and sample
-│   ├── scores/{tool}_rep{r}.tsv           scores of each sample
+│   ├── fits/extra/                        other files some tools write
+│   ├── scores/{tool}_rep{r}.tsv           simulations: scores of each sample
+│   ├── agreement/                         real data: the four agreement tables, for this group only
 │   └── benchmarks/{tool}_rep{r}.tsv       run time and memory
 └── internal/                              files the workflow needs, rarely opened
 ```
@@ -21,9 +29,14 @@
 Everything about one run is in one folder: to see why a tool scored badly for Head-SCC at
 1,000 mutations, compare `samples/known_answer_rep0.dat` with `fits/<tool>_rep0.dat` in
 `runs/synth_realistic/Head-SCC/1000_mutations/`. `{r}` is the repeat (`num_realizations`),
-starting at 0. For `synth_custom` data, the dataset name takes the place of the tissue.
-For `real` data, the folder is `runs/real/{tissue}/all_mutations/`, since real samples
-keep their own mutation counts, and the repeat is always 0.
+starting at 0.
+
+`{group}` is the tissue for `synth_realistic`, the dataset name for `synth_custom`, and for
+`real` the dataset name, or the tissue when the catalog's columns are named `Tissue::Sample`
+(see [Real data](configuration.md#real-data-real)). For `real` data the folder is
+`runs/real/{group}/all_mutations/`, since real samples keep their own mutation counts, and
+the repeat is always 0. With `relevance_modes: ["relevant"]`, the fits, scores and agreement
+of that mode go to a second folder ending in `_relevant`, e.g. `1000_mutations_relevant/`.
 
 Logs follow the same folders under `{log_dir}`, e.g.
 `{log_dir}/runs/synth_realistic/Head-SCC/1000_mutations/SPA_rep0.stderr.log`.
@@ -75,7 +88,7 @@ Methods, settings and score definitions are in the appendix at the end of the re
 ## Comparing tools without a known answer
 
 For `real` data, the report is `report_real.html`.
-Tools are compared with each other, per tissue:
+Tools are compared with each other, per group:
 
 | Measure | Meaning |
 |---|---|
@@ -85,7 +98,7 @@ Tools are compared with each other, per tissue:
 | TAE (tool vs. tool) | Share of mutations the two tools assign differently |
 | Unassigned mutations | Share of each sample's mutations a tool leaves out |
 
-The same data is in `summary/`, and for each tissue in its run folder (`runs/real/{tissue}/all_mutations/agreement/`):
+The same data is in `summary/`, and for each group in its run folder (`runs/real/{group}/all_mutations/agreement/`):
 
 | File | Contents |
 |---|---|
