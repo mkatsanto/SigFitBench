@@ -1,5 +1,5 @@
 # ==============================================================================
-# VCF INPUT (data_type == "samples")
+# VCF INPUT: ONE VCF AT A TIME (config section "samples")
 # ==============================================================================
 # Turns one VCF into a table of mutation counts. The tools do not read this file: to get it,
 # ask Snakemake for it by name, e.g. `snakemake input/samples/<sample>_mutations.dat`.
@@ -8,14 +8,11 @@
 # Config:
 #   samples:
 #     vcf_dir: "input/vcf"                     # {identifier}.vcf(.gz) files live here
-#     reference_fasta: "input/ref/genome.fa"   # needs a matching genome.fa.fai
+#     reference_fasta: "input/ref/genome.fa"   # its .fai index is made if missing
 
-# SigVCF is run locally from its source folder (no installation needed): config 'sigvcf_source' (relative to the folder
-# snakemake is started from), or by default the SigVCF folder next to SigFitBench
-SIGVCF_SOURCE = os.path.abspath(config.get("sigvcf_source") or os.path.join(workflow.basedir, "..", "..", "SigVCF"))
-if not os.path.exists(os.path.join(SIGVCF_SOURCE, "sigvcf", "cli.py")):
-    logger.warning(f"SigVCF not found in {SIGVCF_SOURCE}: set 'sigvcf_source' in the config to build catalogs from VCFs")
-SIGVCF = f"PYTHONPATH='{SIGVCF_SOURCE}' python -m sigvcf.cli"
+# SigVCF (https://github.com/mkatsanto/SigVCF) is installed in the environment envs/sigvcf.yaml,
+# which gives the command "sigvcf"
+SIGVCF = "sigvcf"
 
 
 rule generate_matrix_from_vcf:
@@ -68,7 +65,7 @@ def _resolve_sample_vcf(identifier):
 #   real_datasets:
 #     MyCohort:
 #       vcf_dir: "path/to/vcfs"                  # one {sample}.vcf(.gz) per sample
-#       reference_fasta: "input/ref/genome.fa"   # optional, default samples.reference_fasta; needs a .fai index
+#       reference_fasta: "input/ref/genome.fa"   # optional, default samples.reference_fasta; its .fai index is made if missing
 
 import glob
 import re
@@ -121,3 +118,34 @@ if VCF_DATASETS:
             "--output-formats sbs96 "
             "{params.matrix_order_arg}) "
             "> {log.stdout:q} 2> {log.stderr:q}"
+
+
+# ==============================================================================
+# INDEX OF THE REFERENCE GENOME (genome.fa.fai), made once if it is missing
+# ==============================================================================
+
+# Only genomes without an index: an index that already exists is used as it is, so it
+# does not make Snakemake redo the steps that depend on it
+REFERENCE_FASTAS = sorted({
+    fasta for fasta in
+    [config.get("samples", {}).get("reference_fasta")] + [_dataset_fasta(ds) for ds in VCF_DATASETS]
+    if fasta and not os.path.exists(fasta + ".fai")
+})
+
+if REFERENCE_FASTAS:
+    rule index_reference_fasta:
+        """Write the .fai index next to the reference genome, so SigVCF can read any
+        position of it directly. Same as `samtools faidx genome.fa`."""
+        input:
+            "{fasta}"
+        output:
+            "{fasta}.fai"
+        wildcard_constraints:
+            fasta="|".join(re.escape(fasta) for fasta in REFERENCE_FASTAS)
+        conda:
+            os.path.join(workflow.basedir, "envs", "sigvcf.yaml")
+        threads: 1
+        resources:
+            mem_mb=lambda wildcards, attempt: 1000 * attempt,
+        shell:
+            "python -c 'import pysam, sys; pysam.faidx(sys.argv[1])' {input:q}"
