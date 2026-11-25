@@ -4,7 +4,7 @@ channels:
 dependencies:
   - python=3.11
   - pip
-  - numpy<2  # StarSignDNA converts 1x1 arrays with float(), which NumPy 2 rejects
+  - numpy<2
   - pandas
   - scipy
   - scikit-learn

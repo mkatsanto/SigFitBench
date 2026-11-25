@@ -6,10 +6,8 @@ dependencies:
   - r-base>=4.4
   - r-dplyr
   - r-optparse
-  # sigfit itself is only on GitHub; sigfit.post-deploy.sh installs it
   - r-remotes
-  - compilers           # sigfit compiles its Stan models when it is installed
-  # sigfit's Stan models use an array syntax that Stan removed in version 2.33
+  - compilers
   - r-rstan=2.32
   - r-stanheaders=2.32
   - r-rstantools
@@ -17,7 +15,7 @@ dependencies:
   - r-rcppeigen
   - r-bh
   - r-coda
-  - r-codetools        # lets R check sigfit's code while installing, instead of warning
+  - r-codetools
   - r-clue
   - r-knitr
   - r-rmarkdown
