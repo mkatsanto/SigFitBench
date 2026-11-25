@@ -116,6 +116,23 @@ active_data_types = [
 if "real" in config.get("data_types", []) and not config.get("real_datasets"):
     logger.warning('data_types includes "real" but real_datasets is empty')
 
+# Each group of real samples gets its own results folder, named after the group, so
+# no two datasets may give the same group name (otherwise one of them would not be fit)
+if "real" in config.get("data_types", []):
+    _datasets_of_group = {}
+    for _ds_name in config.get("real_datasets", {}):
+        for _group in get_real_cancer_types(_ds_name):
+            _datasets_of_group.setdefault(_group, []).append(_ds_name)
+    _shared_groups = {g: ds for g, ds in _datasets_of_group.items() if len(ds) > 1}
+    if _shared_groups:
+        raise ValueError(
+            "real_datasets: these group names come from more than one dataset: "
+            + "; ".join(f"{g!r} in {ds}" for g, ds in _shared_groups.items())
+            + ". A group is named after the dataset, or after the tissue when the catalog's "
+            "columns are named 'Tissue::Sample'. Rename the dataset or the tissues so every "
+            "group name is different."
+        )
+
 # Whether the run has simulations (scored against the known answer) and/or real samples
 # (tools compared with each other); rule all asks only for the summaries that apply.
 _has_ground_truth_data = bool(active_data_types) or "synth_custom" in config.get("data_types", [])
