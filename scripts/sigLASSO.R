@@ -20,8 +20,8 @@ context_file <- read.table(snakemake@input[["data"]], row.names=1, header=TRUE, 
 counts <- as.matrix(context_file)
 counts <- counts[rownames(cosmic), , drop = FALSE]
 
-# Fit one sample at a time (equivalent to the batch call, since siglasso fits each sample
-# independently), so a sample that fails gets all-zero contributions instead of stopping the run.
+# Fit one sample at a time (siglasso fits each sample on its own anyway), so a sample
+# that fails gets all-zero contributions instead of stopping the run.
 sig_names <- colnames(cosmic)
 zero_col <- setNames(rep(0, length(sig_names)), sig_names)
 

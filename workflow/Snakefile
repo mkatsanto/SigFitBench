@@ -1,4 +1,4 @@
-"""SigFitTest workflow - Signature analysis and benchmarking pipeline"""
+"""SigFitBench: runs signature fitting tools on simulated and real samples and compares them"""
 
 import os
 import pandas as pd
@@ -25,15 +25,15 @@ def fix_macos_benchmark_memory():
     psutil.Process.memory_full_info = memory_info_with_pss
     psutil.Process.io_counters = io_counters_not_available
 
-if sys.platform == "darwin":  # "darwin" = macOS
+if sys.platform == "darwin":  # macOS
     fix_macos_benchmark_memory()
 
 
 configfile: os.path.join(workflow.basedir, "..", "config", "config.yaml")
 
-# Expand {output_dir} placeholders in config
+# Config values may contain {output_dir}; fill it in
 def expand_output_dir_in_dict(d, output_dir):
-    """Recursively expand {output_dir} placeholders in dictionary values"""
+    """Replace {output_dir} in every text value of the config, however deeply nested"""
     if isinstance(d, dict):
         return {k: expand_output_dir_in_dict(v, output_dir) for k, v in d.items()}
     elif isinstance(d, list):
@@ -46,7 +46,7 @@ def expand_output_dir_in_dict(d, output_dir):
 if "output_dir" in config:
     config = expand_output_dir_in_dict(config, config["output_dir"])
 
-# Include all rules from the rules directory
+# Rule files
 include: "rules/common.smk"
 include: "rules/tools.smk"            # first: registers the tools the other rule files use
 # in-house methods, included only if present (the file is not in the public repository)
@@ -83,17 +83,11 @@ if "samples_file" in config and os.path.exists(config["samples_file"]):
 else:
     logger.info("No samples file configured - skipping sample analysis")
 
-# Final target rule: collect all workflow outputs
 rule all:
-    """
-    Target rule that expands all wildcard combinations for complete analysis.
-    Includes tool fitting results and comprehensive evaluation metrics.
-    Wildcards are used in individual rules, expanded only here.
-    Conditionally includes sample analysis if samples.tsv is populated.
-    Conditionally includes bootstrap quality assessment if enabled in config.
-    """
+    """Everything the run should produce: every tool's result for every run of the chosen
+    data types, the summary tables and the HTML reports."""
     input:
-        # Tool fitting outputs (data generation + tool execution)
+        # Tool results: realistic simulations
         tool_results = expand(
             tool_result("{tool}"),
             data_type=active_data_types,
@@ -103,7 +97,7 @@ rule all:
             tool=get_selected_tools(),
             rep=range(config.get("num_realizations", 1))
         ),
-        # Custom fixed-weights tool results (data_type == "synth_custom")
+        # Tool results: custom simulations
         custom_tool_results = expand(
             tool_result("{tool}"),
             data_type="synth_custom",
@@ -113,7 +107,7 @@ rule all:
             rep=range(config.get("num_realizations", 1)),
             tool=get_selected_tools(),
         ) if "synth_custom" in config.get("data_types", []) else [],
-        # Real-sample tool results (data_type == "real", rep always 0, no ground truth)
+        # Tool results: real samples (one repeat only, no known answer)
         real_tool_results = expand(
             tool_result("{tool}"),
             data_type="real",
@@ -123,10 +117,7 @@ rule all:
             relevance=relevance_endings(),
             tool=get_selected_tools(),
         ) if "real" in config.get("data_types", []) else [],
-        # Ground-truth-based summary + report (synth_realistic/synth_custom only — real has no
-        # ground truth, so compute_summary_metrics would have nothing to
-        # aggregate and get_eval_files() returns []; only request these when there's
-        # actually ground-truth data to summarize).
+        # Scores against the known answer: simulations only
         all_metrics = (
             summary_file("evaluation_metrics")
             if _has_ground_truth_data else []
@@ -136,16 +127,14 @@ rule all:
             if _has_ground_truth_data else []
         ),
         bootstrap_quality = summary_file("bootstrap_quality") if config.get("evaluation", {}).get("run_bootstrap_quality", False) else [],
-        # Wall time + peak memory per tool run (independent of ground truth, so requested
-        # whenever there's anything for the tool rules to have benchmarked).
+        # Run time and memory of each tool
         tool_benchmarks = (
             summary_file("tool_benchmarks")
             if _has_ground_truth_data else []
         ),
         # One report per data type: realistic simulations, custom simulations
         html_reports=[report_file(name) for name in report_names],
-        # Cross-tool agreement summary + report (real only — no ground truth, so tools
-        # are compared to each other instead of to a known answer).
+        # Real samples have no known answer, so the tools are compared with each other
         tool_agreement = (
             summary_file("tool_agreement")
             if _has_no_ground_truth_data else []

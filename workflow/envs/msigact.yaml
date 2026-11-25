@@ -2,7 +2,6 @@ channels:
   - conda-forge
   - bioconda
 dependencies:
-  # Dependencies of mSigAct; the packages not on conda are installed by msigact.post-deploy.sh
   - r-base>=4.2
   - r-remotes
   - r-rcpp

@@ -2,8 +2,6 @@
 
 import os
 
-# Arguments the SigProfilerAssignment rules (SPA, SPA_low, SPA_tree) set themselves
-SPA_ARGUMENTS = {"samples", "input_type", "output", "signature_database", "cpu"}
 
 # ==============================================================================
 # WILDCARD CONSTRAINTS
@@ -26,7 +24,7 @@ rule mutationalpatterns:
         result=tool_result("MutationalPatterns", input_format="csv_no_index")
     params:
         strict=lambda wildcards: get_tool_config("mutationalpatterns")["strict"],
-        **extra_params("mutationalpatterns", protected={"mut_matrix", "signatures"})
+        **extra_params("mutationalpatterns")
     log:
         **tool_logs("MutationalPatterns")
     benchmark:
@@ -47,7 +45,7 @@ rule deconstructsigs:
     output:
         result=tool_result("deconstructSigs", input_format="tab_with_index")
     params:
-        **extra_params("deconstructsigs", protected={"tumor.ref", "sample.id", "signatures.ref", "contexts.needed"})
+        **extra_params("deconstructsigs")
     log:
         **tool_logs("deconstructSigs")
     benchmark:
@@ -67,7 +65,7 @@ rule mmsig:
     output:
         result=tool_result("mmsig", input_format="csv_with_index")
     params:
-        **extra_params("mmsig", protected={"muts.input", "sig.input", "input.format"})
+        **extra_params("mmsig")
     log:
         **tool_logs("mmsig")
     benchmark:
@@ -89,7 +87,7 @@ rule sigfit:
         result=tool_result("sigfit", input_format="csv_with_index"),
         lower90=tool_result("sigfit", "lower90")
     params:
-        **extra_params("sigfit", protected={"counts", "signatures"})
+        **extra_params("sigfit")
     log:
         **tool_logs("sigfit")
     benchmark:
@@ -109,7 +107,7 @@ rule siglasso:
     output:
         result=tool_result("siglasso", input_format="csv_quoted")
     params:
-        **extra_params("siglasso", protected={"sample_spectrum", "signature", "plot"})
+        **extra_params("siglasso")
     log:
         **tool_logs("siglasso")
     benchmark:
@@ -130,7 +128,7 @@ rule sigminer:
         result=tool_result("sigminer", input_format="csv_with_index")
     params:
         method=lambda wildcards: get_tool_config("sigminer")["method"],
-        **extra_params("sigminer", protected={"catalogue_matrix", "sig", "type", "return_class", "return_error"})
+        **extra_params("sigminer")
     log:
         **tool_logs("sigminer")
     benchmark:
@@ -172,7 +170,7 @@ rule signature_tools:
             --method {params.method:q} \
             --filter-type {params.exposureFilterType:q} \
             --nboot {params.nboot} \
-            --nparallel {threads}""" + extra_name_values("signature_tools", protected={"catalogues", "signatures", "nparallel"}) + """ \
+            --nparallel {threads}""" + extra_name_values("signature_tools") + """ \
             > {log.stdout:q} 2> {log.stderr:q}""" + ON_TOOL_FAILURE
 
 rule sigspack:
@@ -182,7 +180,7 @@ rule sigspack:
     output:
         result=tool_result("sigspack", input_format="csv_with_index")
     params:
-        **extra_params("sigspack", protected={"mut_cat", "P"})
+        **extra_params("sigspack")
     log:
         **tool_logs("sigspack")
     benchmark:
@@ -202,7 +200,7 @@ rule yapsa:
     output:
         result=tool_result("yapsa", input_format="csv_with_index")
     params:
-        **extra_params("yapsa", protected={"A", "B", "G", "H"})
+        **extra_params("yapsa")
     log:
         **tool_logs("yapsa")
     benchmark:
@@ -228,7 +226,7 @@ rule musical:
     output:
         result=tool_result("MuSiCal", input_format="csv_no_index")
     params:
-        **extra_params("musical", protected={"X", "W"})
+        **extra_params("musical")
     log:
         **tool_logs("MuSiCal")
     benchmark:
@@ -247,7 +245,7 @@ rule spa:
         result=tool_result("SPA", input_format="tab_with_index")
     params:
         initial_remove_penalty=0.05,
-        **extra_params("spa", protected=SPA_ARGUMENTS)
+        **extra_params("spa")
     log:
         **tool_logs("SPA")
     benchmark:
@@ -270,7 +268,7 @@ rule spa_low:
         result=tool_result("SPA_low", input_format="tab_with_index")
     params:
         initial_remove_penalty=0.02,
-        **extra_params("spa_low", protected=SPA_ARGUMENTS)
+        **extra_params("spa_low")
     log:
         **tool_logs("SPA_low")
     benchmark:
@@ -296,7 +294,7 @@ rule spa_tree:
         result=tool_result("SPA_tree", input_format="tab_with_index")
     params:
         initial_remove_penalty=0.05,
-        **extra_params("spa_tree", protected=SPA_ARGUMENTS | {"recovery_mode"})
+        **extra_params("spa_tree")
     log:
         **tool_logs("SPA_tree")
     benchmark:
@@ -324,9 +322,8 @@ rule msigact:
         max_level=get_tool_config("msigact").get("max_level", 5),
         p_thresh=get_tool_config("msigact").get("p_thresh", 0.05),
         likelihood=get_tool_config("msigact").get("likelihood", "neg.binom"),
-        # any other SparseAssignActivity arguments, by their mSigAct names (e.g. max.subsets);
-        # always present, even when empty, so that existing mSigAct results stay up to date
-        extra=extra_values("msigact", protected={"spectra", "sigs", "output.dir", "num.parallel.samples", "mc.cores.per.sample"})
+        # any other SparseAssignActivity arguments, by their mSigAct names (e.g. max.subsets)
+        extra=extra_values("msigact")
     log:
         **tool_logs("mSigAct")
     benchmark:
@@ -353,7 +350,7 @@ rule starsigndna:
     params:
         n_iterations=get_tool_config("starsigndna").get("n_iterations", 1000),
         data_type="exome" if config.get("wgs_or_wes", "WGS") == "WES" else "genome",
-        **extra_params("starsigndna", protected={"--output-folder", "--n-iterations", "--data-type"})
+        **extra_params("starsigndna")
     log:
         **tool_logs("StarSignDNA")
     benchmark:
@@ -409,7 +406,7 @@ rule sigtrim:
         --thresh-backward {params.thresh_backward} \
         --thresh-forward {params.thresh_forward} \
         --initial-remove-penalty {params.initial_remove_penalty} \
-        --max-iter {params.max_iter}" + extra_flags("sigtrim", protected={"-i", "--input", "-w", "--weights", "-m", "--matrix-order", "-o", "--output"}) + ") > {log.stdout:q} 2> {log.stderr:q}" + ON_TOOL_FAILURE
+        --max-iter {params.max_iter}" + extra_flags("sigtrim") + ") > {log.stdout:q} 2> {log.stderr:q}" + ON_TOOL_FAILURE
 
 
 rule sigid:
@@ -424,10 +421,8 @@ rule sigid:
         data=lambda wildcards: get_input_data('sigid', wildcards),
         weights=lambda wildcards: get_cosmic_signatures("sigid", wildcards.relevance, data_type=wildcards.data_type, dataset=wildcards.cancer_type),
         matrix_order=config["matrix_order"],
-        # true_weights is optional for sigid itself (used only to log a diagnostic TAE,
-        # never influences the fit — see SigID/sigid/cli.py's --true-weights help text);
-        # real samples have no known answer, so this resolves to no input at all for
-        # those, rather than a missing-file error.
+        # the known answer is only written to the log for comparison and does not change the fit;
+        # real samples have none
         true_weights=lambda wildcards: (
             samples_file("known_answer_rep{rep}.dat").format(**wildcards)
             if wildcards.data_type != "real" else []
@@ -464,4 +459,4 @@ rule sigid:
         --max-penalty {params.max_penalty} \
         --initial-remove-penalty {params.initial_remove_penalty} \
         {params.true_weights_arg} \
-        --n-jobs {threads}" + extra_flags("sigid", protected={"-i", "--input", "-w", "--weights", "-m", "--matrix-order", "-o", "--output", "--true-weights", "--n-jobs"}) + ") > {log.stdout:q} 2> {log.stderr:q}" + ON_TOOL_FAILURE
+        --n-jobs {threads}" + extra_flags("sigid") + ") > {log.stdout:q} 2> {log.stderr:q}" + ON_TOOL_FAILURE

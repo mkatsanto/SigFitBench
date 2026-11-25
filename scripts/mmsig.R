@@ -20,15 +20,12 @@ mut_mat <- read.csv(snakemake@input[["data"]], sep="\t", row.names=1, header=TRU
 # Fit one sample at a time
 set.seed(0)
 df <- do.call(rbind, lapply(colnames(mut_mat), function(s) {
+  # the input is a table of counts per context, not a VCF, so there is no reference genome to check;
+  # everything else uses mmsig's defaults
   arguments <- list(muts.input=mut_mat[, s, drop=FALSE],
                     sig.input=cosmic3,
                     input.format="classes",
-                    sample.sigt.profs=NULL,
-                    strandbias=FALSE,
-                    bootstrap=FALSE,
-                    refcheck=FALSE,
-                    cos_sim_threshold=0.01,
-                    dbg=FALSE)
+                    refcheck=FALSE)
   # extra arguments from the config (tool_overrides: mmsig: extra) are added or replace these
   extra <- snakemake@params[["extra"]]
   arguments[names(extra)] <- extra

@@ -1,4 +1,4 @@
-# Snakemake 8+ profile using the native slurm executor plugin
+# Profile for running SigFitBench on UBELIX (University of Bern), Snakemake 8 or later
 executor: slurm
 jobs: 50
 latency-wait: 60
@@ -18,14 +18,14 @@ default-resources:
   slurm_account: "gratis"
   qos: "job_gratis"
   nodes: 1
-  mem_mb: 1024
+  mem_mb: 2024
   runtime: 240
 
 set-resources:
   create_synth_realistic_catalog:
     runtime: 15
   prepare_real_catalog:
-    runtime: 30
+    runtime: 60
   create_synth_custom_catalog:
     runtime: 30
   cosmic_signatures_by_format:

@@ -96,11 +96,24 @@ def select_tissue(catalog: pd.DataFrame, tissue_prefix: str) -> pd.DataFrame:
 
 
 def reindex_to_standard_order(catalog: pd.DataFrame, context_order: list) -> pd.DataFrame:
-    """Reindex catalog rows to the standard context order.
+    """Put the catalog's rows in the order of the reference signatures.
 
-    Missing contexts are filled with 0; unknown contexts trigger a warning.
+    Every mutation type of the reference must be in the catalog, written the same
+    way. If one is missing, the catalog most likely names its mutation types
+    differently, and filling those rows with 0 would give the tools empty samples,
+    so we stop instead. Rows that are not in the reference are dropped with a warning.
     """
-    unknown = set(catalog.index) - set(context_order)
+    catalog_types = set(catalog.index)
+    missing = [c for c in context_order if c not in catalog_types]
+    if missing:
+        raise ValueError(
+            f"{len(missing)} of the {len(context_order)} mutation types of the reference "
+            f"signatures are not in the catalog's first column. They must be written as in "
+            f"the reference, e.g. {context_order[:3]}. "
+            f"Missing ({len(missing)}): {missing[:5]}{' and more' if len(missing) > 5 else ''}. "
+            f"First rows of the catalog: {list(catalog.index[:5])}"
+        )
+    unknown = catalog_types - set(context_order)
     if unknown:
         warnings.warn(
             f"The following contexts in the input catalog are NOT in the standard "
@@ -196,12 +209,32 @@ def main() -> None:
         context_order = load_matrix_order(args.matrix_order)
     catalog = reindex_to_standard_order(catalog, context_order)
 
+    # Samples with no mutations cannot be fitted
+    empty = [c for c in catalog.columns if catalog[c].sum() == 0]
+    if empty:
+        raise ValueError(
+            f"{len(empty)} sample(s) have no mutations: {empty[:10]}"
+            f"{' ...' if len(empty) > 10 else ''}. Remove them from the catalog."
+        )
+
     # ------------------------------------------------------------------
     # Sanitize sample names (after tissue selection, which needs the raw
     # "Tissue::SampleID" columns; before saving, so every tool gets the same
     # already-safe names)
     # ------------------------------------------------------------------
-    catalog.columns = [sanitize_sample_name(c) for c in catalog.columns]
+    cleaned = [sanitize_sample_name(c) for c in catalog.columns]
+    same_name = {}
+    for original, new in zip(catalog.columns, cleaned):
+        same_name.setdefault(new, []).append(original)
+    same_name = {new: originals for new, originals in same_name.items() if len(originals) > 1}
+    if same_name:
+        raise ValueError(
+            "Some sample names become the same once every character other than letters, "
+            "digits, '.' and '_' is replaced by '.' (done so every tool reads the same names): "
+            + "; ".join(f"{originals} -> {new!r}" for new, originals in same_name.items())
+            + ". Rename these samples."
+        )
+    catalog.columns = cleaned
 
     # ------------------------------------------------------------------
     # Save the counts file

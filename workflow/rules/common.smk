@@ -20,9 +20,8 @@ import sys
 #   synth_custom    - simulated from the user's own table of signature mixes (known answer)
 #   real            - real samples from real_datasets (no known answer: tools are
 #                     compared with each other)
-# Computed once here so every included rule file can reference active_data_types.
-# custom and real have their own target blocks in rule all, since they don't use the
-# shared cancer_types list.
+# active_data_types holds the realistic simulations only: custom and real runs are named
+# after their datasets, not after the cancer_types list, so they are handled separately.
 # ==============================================================================
 
 def _peek_catalog_header(catalog_path):
@@ -117,11 +116,25 @@ active_data_types = [
 if "real" in config.get("data_types", []) and not config.get("real_datasets"):
     logger.warning('data_types includes "real" but real_datasets is empty')
 
-# Whether this run has any data with a known answer (synth_realistic/synth_custom) vs. any without
-# (real) — rule all uses these to request the right summary/report target(s) only,
-# instead of unconditionally requesting both (which would crash
-# compute_summary_metrics for a real-only run: get_eval_files() returns []
-# and its --input-files argument requires at least one file).
+# Each group of real samples gets its own results folder, named after the group, so
+# no two datasets may give the same group name (otherwise one of them would not be fit)
+if "real" in config.get("data_types", []):
+    _datasets_of_group = {}
+    for _ds_name in config.get("real_datasets", {}):
+        for _group in get_real_cancer_types(_ds_name):
+            _datasets_of_group.setdefault(_group, []).append(_ds_name)
+    _shared_groups = {g: ds for g, ds in _datasets_of_group.items() if len(ds) > 1}
+    if _shared_groups:
+        raise ValueError(
+            "real_datasets: these group names come from more than one dataset: "
+            + "; ".join(f"{g!r} in {ds}" for g, ds in _shared_groups.items())
+            + ". A group is named after the dataset, or after the tissue when the catalog's "
+            "columns are named 'Tissue::Sample'. Rename the dataset or the tissues so every "
+            "group name is different."
+        )
+
+# Whether the run has simulations (scored against the known answer) and/or real samples
+# (tools compared with each other); rule all asks only for the summaries that apply.
 _has_ground_truth_data = bool(active_data_types) or "synth_custom" in config.get("data_types", [])
 _has_no_ground_truth_data = "real" in config.get("data_types", [])
 
@@ -151,7 +164,7 @@ report_data_type = {name: dt for dt, (name, _) in REPORTS.items()}
 
 
 # ==============================================================================
-# CROSS-TOOL AGREEMENT (no-ground-truth data type: real)
+# CROSS-TOOL AGREEMENT (real samples: no known answer, so the tools are compared with each other)
 # ==============================================================================
 
 def get_agreement_tools():
@@ -224,24 +237,19 @@ def get_tool_config(tool_name):
 # EXTRA TOOL ARGUMENTS (tool_overrides: <tool>: extra: in the config)
 # ==============================================================================
 
-def extra_values(tool, protected=()):
+def extra_values(tool):
     """Extra arguments for one tool, from tool_overrides.<tool>.extra in the config.
 
-    protected: the arguments the tool's rule sets itself (the data going in, the results
-    coming out, the number of cores). Setting them here would break the run or give results
-    in the wrong units, so the run stops instead.
+    They are passed to the tool as they are and can replace what the rule sets itself
+    (input, output, cores, ...), so use them with care.
     """
-    values = get_tool_config(tool).get("extra") or {}
-    protected = set(protected) & set(values)
-    if protected:
-        raise ValueError(f"{tool}: the workflow sets {sorted(protected)} itself; remove them from the extra arguments")
-    return values
+    return get_tool_config(tool).get("extra") or {}
 
 
-def extra_params(tool, protected=()):
+def extra_params(tool):
     """For a rule's params. Adds nothing when no values are set, so that the job's params stay
     the same and Snakemake has no reason to rerun it."""
-    values = extra_values(tool, protected)
+    values = extra_values(tool)
     return {"extra": values} if values else {}
 
 
@@ -251,10 +259,10 @@ def _shell_text(words):
     return "".join(" " + shlex.quote(str(w)).replace("{", "{{").replace("}", "}}") for w in words)
 
 
-def extra_flags(tool, protected=()):
+def extra_flags(tool):
     """Extra arguments as command-line flags: `true` gives the flag alone, `false` leaves it out."""
     words = []
-    for flag, value in extra_values(tool, protected).items():
+    for flag, value in extra_values(tool).items():
         if value is True:
             words.append(flag)
         elif value is not False:
@@ -262,9 +270,9 @@ def extra_flags(tool, protected=()):
     return _shell_text(words)
 
 
-def extra_name_values(tool, protected=()):
+def extra_name_values(tool):
     """Extra arguments as name=value words, for R scripts run from a shell command."""
-    return _shell_text(f"{name}={value}" for name, value in extra_values(tool, protected).items())
+    return _shell_text(f"{name}={value}" for name, value in extra_values(tool).items())
 
 
 # ==============================================================================
@@ -442,9 +450,7 @@ def get_selected_tools():
     if selection == "all":
         return all_tools
     if isinstance(selection, list):
-        # Case-insensitive membership check so "SPA"/"MuSiCal" in tools_to_run
-        # match "spa"/"musical" in the known tools, while preserving the case from
-        # tools_to_run (which must match the hardcoded output filenames in tools.smk).
+        # Names are compared ignoring case, but kept as written in tools_to_run
         unknown = [t for t in selection if t.lower() not in all_tools_lower]
         if unknown and not _warned_unknown_tools:
             print(f"WARNING: tools_to_run entries that are not known tools are skipped: "
@@ -457,7 +463,7 @@ def get_selected_tools():
 _warned_unknown_tools = []  # so the warning above is printed once per run
 
 
-# Pre-joined string for passing out-of-reference signatures to shell commands
+# The signatures left out of the reference, as one space-separated text for shell commands
 OUT_OF_REF_SIGS_STR = ' '.join(config["out_of_reference_sigs"])
 
 

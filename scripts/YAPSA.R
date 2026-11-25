@@ -18,11 +18,9 @@ mut_mat <- as.matrix(read.csv(snakemake@input[["data"]], sep="\t", row.names=1, 
 cosmic3 <- as.matrix(read.table(snakemake@input[["cosmic"]], sep=",", row.names=1, header=TRUE, check.names=FALSE))
 mut_mat <- mut_mat[rownames(cosmic3), , drop = FALSE]
 
-# Reimplementation of YAPSA::LCD(), which just loops lsei() over samples with
-# G = identity / H = 0 (i.e. plain non-negative least squares) -- avoided
-# pulling in bioconductor-yapsa itself since it has no osx-arm64 conda
-# build path (r-nmf) and its other imports (e.g. BSgenome.Hsapiens.UCSC.hg19,
-# KEGGREST) are unrelated to this call.
+# The fit of YAPSA's LCD(): for each sample, least squares with no negative contributions
+# (lsei with G = identity, H = 0). It is written out here because the YAPSA package itself
+# cannot be installed with conda on Apple Silicon Macs.
 lcd <- function(mutation_catalogue, signatures) {
   n_sigs <- ncol(signatures)
   G <- diag(n_sigs)

@@ -18,17 +18,10 @@ for (word in parsed$args) {
   extra[[sub("=.*", "", word)]] <- type.convert(sub("^[^=]*=", "", word), as.is = TRUE)
 }
 
-# Safety net for signature.tools.lib (installed via GitHub, not conda): if
-# for any reason it isn't already installed, install it here instead.
-# Parallel job instances of this rule can hit this at the same time, so a
-# lock directory guards against concurrent installs corrupting each other in
-# the shared conda env. The lock is reclaimed if it's older than
-# STALE_LOCK_SECS: a from-source install of these packages should never take
-# that long, so an older lock means its owner was killed before it could
-# clean up (e.g. an interrupted run) rather than one still legitimately
-# working -- otherwise every future run would wait out the timeout and
-# silently fall through to the library() call below, failing with a
-# misleading "no package called" error instead of actually installing.
+# signature.tools.lib comes from GitHub, not conda. If it is missing, install it here.
+# Several jobs can start at once, so only the one that creates the lock folder installs;
+# the others wait. A lock older than 15 minutes is left over from a run that was stopped,
+# and is removed.
 if (!requireNamespace("signature.tools.lib", quietly = TRUE)) {
   lock_dir <- file.path(Sys.getenv("CONDA_PREFIX"), ".signature_tools_lib_install.lock")
   STALE_LOCK_SECS <- 900

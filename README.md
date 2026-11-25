@@ -189,6 +189,58 @@ random_seed: 0
 Each data type gets its own report. The [guide](docs/guide.md#where-the-samples-come-from)
 explains step by step how `synth_realistic` samples are made.
 
+**Several real datasets in one run.** `real_datasets` can list as many datasets as you
+like, each with its own `catalog` (a table of 96 mutation types × samples) or `vcf_dir`
+(a folder with one VCF per sample). Every dataset is fitted by every tool in the same run.
+For real data only, start from [`own_catalog.yaml`](config/scenarios/own_catalog.yaml): it
+already has the settings such a run still needs.
+
+```yaml
+data_types: ["real"]
+
+real_datasets:
+  CohortA:
+    catalog: "input/cohort_a.tsv"            # 96 mutation types x samples
+  CohortB:
+    vcf_dir: "input/cohort_b_vcfs"           # one VCF per sample
+    reference_fasta: "input/ref/genome.fa"   # same genome build as the VCFs
+```
+
+`cosmic_signatures.base_file` must also match the genome build of your data. The mutation
+types in a catalog's first column must be written as in that file (e.g. `A[C>A]A`):
+otherwise the run stops and shows the difference.
+
+**VCF input.** Catalogs are built from VCFs with
+[SigVCF](https://github.com/mkatsanto/SigVCF), which needs the reference genome the VCFs
+were called against, to read the bases on each side of every mutation. The genome is not
+included: download it as one FASTA file (e.g. GRCh37 or GRCh38 from
+[Ensembl](https://www.ensembl.org/info/data/ftp/) or [UCSC](https://hgdownload.soe.ucsc.edu/downloads.html)),
+unzip it, and give its path as `reference_fasta`. The workflow makes its index
+(`genome.fa.fai`, next to the genome) the first time it is needed.
+
+Some problems are not reported, they only give wrong counts, so check your VCFs first:
+
+- **One sample per VCF.** The sample columns are not read: a VCF with several samples is
+  counted as one sample.
+- **Only filtered mutations.** The `FILTER` column is not read, so keep only the mutations
+  you trust (e.g. `PASS`) before the run.
+- **Same chromosome names and genome build as `reference_fasta`** (`chr1` vs `1`, GRCh37 vs
+  GRCh38). Mutations on a chromosome that is not in the genome, or whose `REF` base does not
+  match it, are skipped.
+- **Sorted by position.** `.vcf` or `.vcf.gz`; no index needed.
+
+Only single-base substitutions are counted. Indels are skipped, and so are substitutions
+next to each other (double-base substitutions). A record with several `ALT` alleles counts
+once per allele.
+
+Sample names are taken from your input: the column names of a catalog, or the file
+names of the VCFs. Each dataset is fitted as one group named after its key
+(`CohortA`, `CohortB`), and that name is its folder in the results. The exception is a
+catalog whose columns are named `Tissue::Sample`, like the PCAWG file: it is split into
+one group per tissue, named after the tissue. Group names must be different across
+all datasets, so two catalogs that both have, say, `Breast-AdenoCA::` columns need
+different tissue names.
+
 **`num_samples` vs. `num_realizations`.** `num_samples` sets how many *different* signature
 mixes are used. `num_realizations` repeats the whole dataset: each repeat keeps the same
 mixes (the same known answer) and draws new random mutations, and is scored on its own.
@@ -214,16 +266,24 @@ one level; to compare 0%, 10% and 20%, run three copies of the config with their
 
 ```
 {output_dir}/
-├── report_synth_realistic.html            ← open this (one report per data type)
+├── report_synth_realistic.html            ← open this: one report per data type
+├── report_synth_custom.html                 (only the ones for the data types you run)
+├── report_real.html
 ├── summary/                               one table each, all runs together
-│   ├── evaluation_metrics.tsv             one row per tool, tissue, mutation count, repeat
-│   ├── per_sample_metrics.tsv             one row per tool and sample
-│   └── tool_benchmarks.tsv                run time (seconds) and peak memory (max_rss_mb)
-├── runs/{data_type}/{tissue}/{N}_mutations/
+│   ├── evaluation_metrics.tsv             simulations: one row per tool, group, mutation count, repeat
+│   ├── per_sample_metrics.tsv             simulations: one row per tool and sample
+│   ├── tool_benchmarks.tsv                simulations: run time (seconds) and peak memory (max_rss_mb)
+│   ├── tool_agreement.tsv                 real data: how closely each pair of tools agrees
+│   ├── signature_calls.tsv                real data: which tools find each signature, in how many samples
+│   ├── signature_weights.tsv              real data: weight per signature, sample and tool
+│   └── sample_activity.tsv                real data: signatures found per sample and tool
+├── runs/{data_type}/{group}/{N}_mutations/
 │   ├── samples/counts_rep{r}.dat          mutation counts the tools fit
-│   ├── samples/known_answer_rep{r}.dat    true signature mix of each sample
+│   ├── samples/known_answer_rep{r}.dat    simulations: true signature mix of each sample
 │   ├── fits/{tool}_rep{r}.dat             what each tool found: mutations per signature and sample
-│   ├── scores/{tool}_rep{r}.tsv           scores of each sample
+│   ├── fits/extra/                        other files some tools write
+│   ├── scores/{tool}_rep{r}.tsv           simulations: scores of each sample
+│   ├── agreement/                         real data: the four agreement tables, for this group only
 │   └── benchmarks/{tool}_rep{r}.tsv       run time and memory
 └── internal/                              files the workflow needs, rarely opened
 ```
@@ -231,9 +291,14 @@ one level; to compare 0%, 10% and 20%, run three copies of the config with their
 Everything about one run is in one folder: to see why a tool scored badly for Head-SCC at
 1,000 mutations, compare `samples/known_answer_rep0.dat` with `fits/<tool>_rep0.dat` in
 `runs/synth_realistic/Head-SCC/1000_mutations/`. `{r}` is the repeat (`num_realizations`),
-starting at 0. For `synth_custom` data, the dataset name takes the place of the tissue.
-For `real` data, the folder is `runs/real/{tissue}/all_mutations/`, since real samples
-keep their own mutation counts, and the repeat is always 0.
+starting at 0.
+
+`{group}` is the tissue for `synth_realistic`, the dataset name for `synth_custom`, and for
+`real` the dataset name, or the tissue when the catalog's columns are named `Tissue::Sample`
+(see [Several real datasets in one run](#configuration)). For `real` data the folder is
+`runs/real/{group}/all_mutations/`, since real samples keep their own mutation counts, and
+the repeat is always 0. With `relevance_modes: ["relevant"]`, the fits, scores and agreement
+of that mode go to a second folder ending in `_relevant`, e.g. `1000_mutations_relevant/`.
 
 Logs follow the same folders under `{log_dir}`, e.g.
 `{log_dir}/runs/synth_realistic/Head-SCC/1000_mutations/SPA_rep0.stderr.log`.
