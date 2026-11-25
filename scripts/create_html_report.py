@@ -55,7 +55,7 @@ class ReportMetadata:
             # other tools
             'SPA':                     '#1F77B4',  # blue
             'SPA_low':                 '#17BECF',  # cyan
-            'FSPA':                    '#9467BD',  # purple
+            'SPA_tree':                '#9467BD',  # purple
             'MuSiCal':                 '#FF7F0E',  # orange
             'MuSiCal-FN':              '#FFBB78',  # light orange
             'MuSiCal-BI':              '#C49C94',  # tan
@@ -75,7 +75,7 @@ class ReportMetadata:
         # Base method extraction (for grouping tools by approach)
         self.base_method_map = {
             'MuSiCal': 'MuSiCal', 'MuSiCal-FN': 'MuSiCal', 'MuSiCal-BI': 'MuSiCal',
-            'SPA': 'SPA', 'SPA_low': 'SPA', 'FSPA': 'SPA',
+            'SPA': 'SPA', 'SPA_low': 'SPA', 'SPA_tree': 'SPA',
             'SigID': 'SigID',
             'SigTrim': 'SigTrim',
         }
@@ -90,7 +90,7 @@ class ReportMetadata:
 
         # Display order for consistent presentation
         self.tool_display_order = [
-            'SPA', 'SPA_low', 'FSPA',
+            'SPA', 'SPA_low', 'SPA_tree',
             'MuSiCal', 'MuSiCal-FN', 'MuSiCal-BI',
             'SigID', 'SigTrim',
             'deconstructSigs', 'MutationalPatterns',

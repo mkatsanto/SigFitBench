@@ -14,7 +14,7 @@ tools_to_run: ["MutationalPatterns", "deconstructSigs", "SPA", "SPA_low", "MuSiC
                "signature_tools", "sigminer", "sigfit", "mmsig", "siglasso",
                "sigspack", "yapsa", "mSigAct", "StarSignDNA"]
 
-data_types: ["realsim"]
+data_types: ["synth_realistic"]
 relevance_modes: ["standard"]
 
 cancer_types: ["Breast", "CNS-GBM", "ColoRect-AdenoCA", "Eso-AdenoCA", "Head-SCC", "Liver-HCC",
